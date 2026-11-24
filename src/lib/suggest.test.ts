@@ -19,6 +19,11 @@ describe('receipt names link to foods', () => {
     ['Baby Spinach 120g', 'spinach'],
     ['Sweet Potato Gold', 'sweet_potato'],
     ['Jasmine Rice 2kg', 'rice_white'],
+    ['Potatoes Washed 4kg', 'potato'],
+    ['Tomatoes Gourmet', 'tomato'],
+    ['Onions Brown 2kg', 'onion'],
+    ['Carrots 1kg', 'carrot'],
+    ['Mixed Berries Frozen 1kg', 'berries'],
     ['SunRice Brown Rice 1kg', 'rice_brown'],
   ])('%s -> %s', (name, key) => {
     expect(bestFoodMatch(name, foods)?.food.id).toBe(INTERIM_FOOD_ID(key))

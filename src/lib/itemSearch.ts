@@ -12,6 +12,7 @@ const DESCRIPTORS = /^(raw|dry|dried|fresh|canned|fluid|uncooked|natural|peeled|
 /** "Chicken, breast, lean flesh, raw" -> "Chicken breast"; "Sauce, soy, reduced salt" -> "Soy sauce, reduced salt". */
 export function displayName(foodName: string): string {
   const parts = foodName.split(',').map((p) => p.trim()).filter(Boolean)
+  if (parts.length === 0) return ''
   if (parts.length === 1) return parts[0]
   const [head, second, ...rest] = parts
   const keepRest = rest.filter((p) => !DESCRIPTORS.test(p) && !/\braw\b/i.test(p))

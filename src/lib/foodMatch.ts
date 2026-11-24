@@ -10,6 +10,7 @@ const STOP = new Set([
   'can', 'tin', 'bottle', 'kg', 'g', 'ml', 'l', 'pk', 'x', 'each', 'ea', 'large', 'small', 'medium', 'value', 'home',
   'brand', 'the', 'and', 'with', 'of', 'in', 'fillets', 'fillet', 'pieces', 'piece', 'portions', 'family', 'style', 'natural',
   'woolworths', 'coles', 'aldi', 'iga', 'macro', 'essentials', 'smart', 'buy', 'own', 'raw', 'whole',
+  'washed', 'brushed', 'unwashed', 'loose', 'punnet', 'bunch', 'prepacked', 'prepack', 'gourmet', 'aust', 'australia', 'ww', 'est', 'per', 'net',
 ])
 
 // everyday word -> words that appear in the food name
@@ -44,13 +45,23 @@ const SYNONYMS: Record<string, string[]> = {
   passata: ['passata'],
 }
 
+/** potatoes -> potato, tomatoes -> tomato, peaches -> peach, carrots -> carrot, berries -> berry. */
+function singular(w: string): string {
+  if (w.length <= 3) return w
+  if (w.endsWith('oes')) return w.slice(0, -2)
+  if (w.endsWith('ies')) return `${w.slice(0, -3)}y`
+  if (/(ch|sh|ss|x)es$/.test(w)) return w.slice(0, -2)
+  if (w.endsWith('s') && !w.endsWith('ss') && !w.endsWith('us')) return w.slice(0, -1)
+  return w
+}
+
 export function tokens(s: string): string[] {
   return s
     .toLowerCase()
     .replace(/\d+(\.\d+)?\s*(kg|g|ml|l|pk|x)\b/g, ' ')
     .split(/[^a-z]+/)
     .filter((w) => w.length > 1 && !STOP.has(w))
-    .map((w) => (w.length > 3 && w.endsWith('es') && !w.endsWith('oes') ? w.slice(0, -2) : w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w))
+    .map(singular)
 }
 
 export interface FoodMatch {
@@ -66,10 +77,10 @@ export function bestFoodMatch(productName: string, foods: Food[]): FoodMatch | n
     const have = new Set(tokens(f.name.replace(/\(.*?\)/g, ' ')))
     // also match the bracketed words, e.g. "(5 star)"
     for (const w of tokens(f.name)) have.add(w)
-    // AFCD-style names lead with the main food ("Egg, chicken, ..."): that word must be on the receipt,
-    // so "Chicken Twisties" never becomes an egg.
-    const head = tokens(f.name.split(',')[0])
-    if (!head.some((w) => want.includes(w))) continue
+    // AFCD-style names lead with the main food ("Egg, chicken, ..."): those words must all be on the
+    // receipt, so "Chicken Twisties" never becomes an egg and "Potatoes" never a sweet potato.
+    const head = tokens(f.name.split(',')[0].replace(/\(.*?\)/g, ' '))
+    if (head.length === 0 || !head.every((w) => want.includes(w))) continue
     const hits = want.filter((w) => have.has(w)).length
     if (hits === 0) continue
     // balanced overlap (F1): brand words on the receipt and extra words in the food name both cost a little

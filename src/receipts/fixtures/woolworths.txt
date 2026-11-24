@@ -1,0 +1,23 @@
+TEST RECEIPT - NOT A REAL TRANSACTION
+Woolworths
+Carousel WA 6107
+ABN 88 000 014 675
+TAX INVOICE
+Description                       $
+Bananas Cavendish
+0.854 kg NET @ $3.90/kg        3.33
+WW Full Cream Milk 3L          4.65
+Chicken Breast Fillets 1kg    13.00
+Price Reduced                  -2.60
+Cobram Est EVOO 750ml         15.00
+Qty 2 @ $2.50 each
+Avocado Hass                   5.00
+^Fairy Dish Liquid 900ml        6.50
+Jasmine Rice 2kg                5.00
+12 ITEMS
+SUBTOTAL                      49.88
+TOTAL                        $49.88
+EFTPOS                        49.88
+Everyday Rewards Card **** 1234
+Points earned                    49
+25/11/2026 14:32  Store 4312 Lane 4

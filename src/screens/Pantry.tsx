@@ -9,7 +9,7 @@ import { addDays } from '../engines/nutrition/engine'
 import { bestFoodMatch } from '../lib/foodMatch'
 import { guessCategory, guessStorage, searchItems } from '../lib/itemSearch'
 import { usePantrySuggestions } from '../lib/hooks'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 
 const LOCATIONS: InventoryLot['location'][] = ['fridge', 'freezer', 'pantry']
 const LOC_LABEL = { fridge: 'Fridge', freezer: 'Freezer', pantry: 'Pantry' }
@@ -32,7 +32,12 @@ export default function PantryScreen() {
   const now = today()
   const stock = useLiveQuery(() => pantry.stock())
   const products = useLiveQuery(() => db.products.toArray())
-  const [adding, setAdding] = useState(false)
+  const [params, setParams] = useSearchParams()
+  const [adding, setAddingState] = useState(params.get('add') === '1')
+  const setAdding = (v: boolean) => {
+    setAddingState(v)
+    if (!v && params.get('add')) setParams({}, { replace: true })
+  }
   const [lotOpen, setLotOpen] = useState<InventoryLot | null>(null)
   const pmap = useMemo(() => new Map((products ?? []).map((p) => [p.id, p])), [products])
   const value = (stock ?? []).reduce((s, l) => s + l.remaining * l.unitCostCents, 0)

@@ -1,0 +1,12 @@
+TEST RECEIPT - NOT A REAL TRANSACTION
+SPUDSHED JANDAKOT
+Tax Invoice
+Potatoes Washed 4kg            2.99
+Tomatoes Gourmet      0.75kg   3.74
+Onions Brown 2kg               1.99
+Garlic Aust                    1.20
+Carrots 1kg                    0.99
+Lamb Loin Chops               14.85
+Total                         25.76
+EFTPOS                        25.76
+22/11/2026

@@ -184,6 +184,61 @@ test('manual entry: type-ahead suggests foods and sauces; add several in a row',
   await expect(list.getByRole('option').first()).toContainText('bought before')
 })
 
+test('scan a receipt photo: read on the phone, check, save to pantry; the same photo is refused next time', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.goto('/#/scan')
+  await page.getByLabel('Choose a receipt photo').setInputFiles('e2e/fixtures/test-receipt-woolworths.jpg')
+  await expect(page.getByText('Check the receipt')).toBeVisible({ timeout: 90_000 })
+  await expect(page.getByLabel('Store')).toHaveValue('Woolworths')
+  await expect(page.getByLabel('Date', { exact: true })).toHaveValue('2026-11-25')
+  await expect(page.getByText(/\$49\.88 ✓/)).toBeVisible() // lines add up to the total
+  const names = await page.getByLabel('Name').evaluateAll((els) => els.map((e) => (e as HTMLInputElement).value))
+  expect(names).toEqual(expect.arrayContaining(['Bananas Cavendish', 'Chicken Breast Fillets 1kg', 'Jasmine Rice 2kg']))
+  // dish liquid is not food: unticked
+  const dish = page.locator('section', { has: page.getByText(/^Receipt: .*Fairy Dish Liquid/) })
+  await expect(dish.getByRole('checkbox', { name: 'Food: add to my pantry' })).not.toBeChecked()
+  await page.getByRole('button', { name: 'Save to pantry and expenses' }).click()
+  await expect(page.getByText(/6 items added to your pantry from Woolworths/)).toBeVisible()
+  await page.getByRole('button', { name: 'Scan another' }).click()
+  await page.getByLabel('Choose a receipt photo').setInputFiles('e2e/fixtures/test-receipt-woolworths.jpg')
+  await expect(page.getByText(/This photo was already added: Woolworths/)).toBeVisible()
+  await page.goto('/#/pantry')
+  await expect(page.getByText('Chicken Breast Fillets 1kg')).toBeVisible()
+  await expect(page.getByText('Cook from your pantry')).toBeVisible()
+})
+
+test('scan a hard photo (faded, tilted, shadowed): still reads the shop correctly', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.goto('/#/scan')
+  await page.getByLabel('Choose a receipt photo').setInputFiles('e2e/fixtures/test-receipt-coles-hard.jpg')
+  await expect(page.getByText('Check the receipt')).toBeVisible({ timeout: 90_000 })
+  await expect(page.getByLabel('Store')).toHaveValue('Coles')
+  await expect(page.getByText(/\$25\.23 ✓/)).toBeVisible()
+})
+
+test('receipt scanning works with the network off (after install)', async ({ page, context }) => {
+  test.setTimeout(120_000)
+  await page.goto('/#/scan')
+  await page.evaluate(() => navigator.serviceWorker.ready)
+  // wait until the OCR engine and English model are in the offline cache
+  await expect.poll(async () => page.evaluate(async () => {
+    const keys = await caches.keys()
+    for (const k of keys) {
+      const c = await caches.open(k)
+      const urls = (await c.keys()).map((r) => r.url)
+      if (urls.some((u) => u.includes('eng.traineddata.gz')) && urls.some((u) => u.includes('relaxedsimd-lstm'))) return true
+    }
+    return false
+  }), { timeout: 60_000 }).toBe(true)
+  await page.reload()
+  await context.setOffline(true)
+  await page.reload()
+  await page.getByLabel('Choose a receipt photo').setInputFiles('e2e/fixtures/test-receipt-woolworths.jpg')
+  await expect(page.getByText('Check the receipt')).toBeVisible({ timeout: 90_000 })
+  await expect(page.getByText(/\$49\.88 ✓/)).toBeVisible()
+  await context.setOffline(false)
+})
+
 test('all 11 screens open from the navigation', async ({ page }) => {
   await page.goto('/#/')
   for (const n of ['Plan', 'Recipes', 'Pantry', 'Today']) {

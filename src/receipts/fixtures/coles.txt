@@ -1,0 +1,19 @@
+TEST RECEIPT - NOT A REAL TRANSACTION
+Coles Supermarkets
+Coles Morley
+Tax Invoice ABN 45 004 189 708
+Coles Beef Mince 3 Star 500g     $7.00
+2 @ $1.80
+Coles Lebanese Cucumber          $3.60
+Kikkoman Soy Sauce 250ml        $4.20
+^Coles Garbage Bags 50pk         $3.50
+Coles Greek Yoghurt 1kg          $5.50
+  Promotional Price Saving       -$1.00
+Broccoli loose
+0.412kg @ $5.90/kg               $2.43
+Subtotal                        $25.23
+Total savings                     $1.00
+TOTAL                           $25.23
+Mastercard                      $25.23
+Flybuys points earned 25
+Date 24/11/26 Time 18:05

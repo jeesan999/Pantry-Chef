@@ -19,6 +19,7 @@ describe('readable names', () => {
     ['Sauce, salsa, tomato based', 'Salsa'],
     ['Rice, white, raw', 'White rice'],
   ])('%s -> %s', (name, want) => expect(displayName(name)).toBe(want))
+  it('an empty name stays empty (no crash)', () => expect(displayName('')).toBe(''))
 })
 
 describe('type-ahead', () => {
