@@ -75,7 +75,7 @@ export default function ScanScreen() {
             <input ref={picker} type="file" accept="image/*" className="sr-only" aria-label="Choose a receipt photo" onChange={(e) => start(e.target.files?.[0])} />
             <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-stone-600">
               <li>Lay the receipt flat, in good light, filling the frame.</li>
-              <li>Long receipt? Fold it or take it in two photos.</li>
+              <li>Long receipt? Fold it so it fits, or scan the top and add the rest with “Add a line the scan missed”.</li>
               <li>You check every line before anything is saved.</li>
             </ul>
           </Card>
