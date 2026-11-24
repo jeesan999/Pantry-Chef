@@ -9,7 +9,7 @@ import type { PlannedMeal, Recipe } from '../db/types'
 import { SLOTS, type SlotName } from '../engines/contract'
 import { SLOT_LABEL, SLOT_TAGS, assignMeal, clearMeal, targetsForDate } from '../lib/day'
 import { DayTypeSwitch } from '../components/DayTypeSwitch'
-import { useAllRecipeNutrition, useApprovedTargets, useDayChoices, useProfile } from '../lib/hooks'
+import { useAllRecipeNutrition, useApprovedTargets, useDayChoices, usePantrySuggestions, useProfile } from '../lib/hooks'
 import { addNutrients, emptyNutrients, portionForProtein, scaleNutrients } from '../lib/nutrition'
 
 export default function TodayScreen() {
@@ -182,21 +182,25 @@ function PickRecipe({ slot, targetProtein, onPick, onClose, onClear, hasCurrent 
   slot: SlotName; targetProtein: number; onPick: (id: string, scale: number) => void; onClose: () => void; onClear: () => void; hasCurrent: boolean
 }) {
   const nutrition = useAllRecipeNutrition()
+  const pantry = usePantrySuggestions()
+  const cover = new Map((pantry ?? []).map((p) => [p.recipe.id, p]))
   const recipes = useLiveQuery(() => db.recipes.where('slotTags').anyOf(SLOT_TAGS[slot]).distinct().toArray(), [slot])
   const options = (recipes ?? [])
     .filter((r) => !r.fixedSlot)
     .map((r) => {
       const n = nutrition?.get(r.id)
       const scale = n ? portionForProtein(n.perServing.proteinG, targetProtein) : 1
-      return { r, n, scale, kcal: n ? n.perServing.energyKcal * scale : 0, protein: n ? n.perServing.proteinG * scale : 0 }
+      const pc = cover.get(r.id)
+      return { r, n, scale, kcal: n ? n.perServing.energyKcal * scale : 0, protein: n ? n.perServing.proteinG * scale : 0, pantry: pc?.coverage ?? 0, soon: !!pc?.usesSoon.length }
     })
-    .sort((a, b) => Math.abs(a.scale - 1) - Math.abs(b.scale - 1))
+    // what you have counts most; then how little the portion needs scaling
+    .sort((a, b) => b.pantry + (b.soon ? 0.25 : 0) - Math.abs(b.scale - 1) - (a.pantry + (a.soon ? 0.25 : 0) - Math.abs(a.scale - 1)))
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()} title={`Choose ${SLOT_LABEL[slot].toLowerCase()}`}>
-      <p className="mb-3 text-sm text-stone-500">Portions are scaled to about {Math.round(targetProtein)} g protein. Best fits first.</p>
+      <p className="mb-3 text-sm text-stone-500">Portions are scaled to about {Math.round(targetProtein)} g protein. What you have in the pantry first.</p>
       {options.length === 0 && <p className="text-sm text-stone-600">No recipes are tagged for this meal yet.</p>}
       <ul className="divide-y divide-stone-100">
-        {options.map(({ r, scale, kcal, protein }) => (
+        {options.map(({ r, scale, kcal, protein, pantry: pc, soon }) => (
           <li key={r.id}>
             <button className="flex w-full items-center gap-3 py-2.5 text-left" onClick={() => onPick(r.id, scale)}>
               <RecipeArt recipe={r} className="h-12 w-12 shrink-0 rounded-lg" />
@@ -205,6 +209,7 @@ function PickRecipe({ slot, targetProtein, onPick, onClose, onClear, hasCurrent 
                 <p className="tabular text-xs text-stone-500">
                   {r.cuisine} · {Math.round(protein)} g protein · {Math.round(kcal)} kcal{scale !== 1 && ` · ${scale}×`}
                 </p>
+                {pc > 0 && <p className="text-xs text-leaf-700">{Math.round(pc * 100)}% in your pantry{soon && ' · uses food dated soon'}</p>}
               </div>
             </button>
           </li>

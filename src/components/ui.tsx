@@ -85,7 +85,7 @@ export function Badge({ tone = 'stone', children }: { tone?: 'stone' | 'leaf' | 
     red: 'bg-red-100 text-red-700',
     blue: 'bg-sky-100 text-sky-700',
   }[tone]
-  return <span className={cx('inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium', t)}>{children}</span>
+  return <span className={cx('inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium', t)}>{children}</span>
 }
 
 export function Notice({ tone = 'ember', children }: { tone?: 'ember' | 'leaf' | 'red' | 'stone'; children: ReactNode }) {

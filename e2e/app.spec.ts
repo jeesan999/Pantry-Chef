@@ -125,6 +125,35 @@ test('Today: switch today to rest and back', async ({ page }) => {
   await expect(page.getByText('Carbs (daily minimum)')).toBeVisible()
 })
 
+async function addToPantry(page: Page, name: string, qty: string, cost: string) {
+  await page.getByRole('button', { name: 'Add' }).click()
+  await page.getByLabel('Product').fill(name)
+  await page.getByRole('button', { name: new RegExp(`Create “${name}”`) }).click()
+  await page.getByLabel('Quantity').fill(qty)
+  await page.getByLabel('Total paid ($)').fill(cost)
+  await page.getByRole('button', { name: 'Add to pantry' }).click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+}
+
+test('groceries by their receipt names link to foods and drive recipe suggestions', async ({ page }) => {
+  await page.goto('/#/pantry')
+  await page.getByRole('button', { name: 'Add' }).click()
+  await page.getByLabel('Product').fill('Chicken Breast Fillets 1kg')
+  await page.getByRole('button', { name: /Create “Chicken Breast Fillets 1kg”/ }).click()
+  await expect(page.getByText('Matched from the name; tap to change.')).toBeVisible()
+  await expect(page.getByRole('dialog').getByText('Chicken, breast, lean flesh, raw')).toBeVisible()
+  await page.getByRole('dialog').press('Escape')
+  await addToPantry(page, 'Chicken Breast Fillets 1kg', '1000', '13')
+  await addToPantry(page, 'Jasmine Rice 1kg', '1000', '3.50')
+  await expect(page.getByText('Cook from your pantry')).toBeVisible()
+  await expect(page.getByText(/% in stock/).first()).toBeVisible()
+  await page.goto('/#/recipes')
+  await page.getByText(/^From my pantry/).click()
+  const cards = page.locator('ul li a')
+  expect(await cards.count()).toBeGreaterThan(0)
+  await expect(cards.first().getByText(/% in stock/)).toBeVisible()
+})
+
 test('all 11 screens open from the navigation', async ({ page }) => {
   await page.goto('/#/')
   for (const n of ['Plan', 'Recipes', 'Pantry', 'Today']) {

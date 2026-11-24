@@ -6,7 +6,7 @@ import { RecipeArt } from '../components/RecipeArt'
 import { Badge, Button, Input, Page, Select, cx } from '../components/ui'
 import { db } from '../db/instance'
 import type { SlotTag } from '../db/types'
-import { useAllRecipeNutrition } from '../lib/hooks'
+import { useAllRecipeNutrition, usePantrySuggestions } from '../lib/hooks'
 
 export const TAG_LABEL: Record<SlotTag, string> = {
   breakfast: 'Breakfast',
@@ -24,12 +24,17 @@ export default function RecipesScreen() {
   const [q, setQ] = useState('')
   const [cuisine, setCuisine] = useState('')
   const [tag, setTag] = useState<SlotTag | ''>('')
+  const [fromPantry, setFromPantry] = useState(false)
+  const pantry = usePantrySuggestions()
+  const cover = new Map((pantry ?? []).map((p, i) => [p.recipe.id, { ...p, rank: i }]))
 
   const cuisines = useMemo(() => [...new Set((recipes ?? []).map((r) => r.cuisine))].sort(), [recipes])
   const fuse = useMemo(() => new Fuse(recipes ?? [], { keys: ['name', 'cuisine'], threshold: 0.35 }), [recipes])
   const list = (q ? fuse.search(q).map((x) => x.item) : recipes ?? [])
     .filter((r) => !cuisine || r.cuisine === cuisine)
     .filter((r) => !tag || r.slotTags.includes(tag))
+    .filter((r) => !fromPantry || cover.has(r.id))
+    .sort((a, b) => (fromPantry ? cover.get(a.id)!.rank - cover.get(b.id)!.rank : 0))
 
   return (
     <Page title="Recipes" subtitle={recipes ? `${recipes.length} recipes` : ' '} action={<Link to="/recipes/new"><Button>Add</Button></Link>}>
@@ -45,6 +50,10 @@ export default function RecipesScreen() {
             {(Object.keys(TAG_LABEL) as SlotTag[]).map((t) => <option key={t} value={t}>{TAG_LABEL[t]}</option>)}
           </Select>
         </div>
+        <label className={cx('flex min-h-10 w-fit items-center gap-2 rounded-full border px-3 text-sm', fromPantry ? 'border-leaf-500 bg-leaf-50 text-leaf-700' : 'border-stone-300 text-stone-600')}>
+          <input type="checkbox" className="sr-only" checked={fromPantry} onChange={(e) => setFromPantry(e.target.checked)} />
+          From my pantry{pantry ? ` (${pantry.length})` : ''}
+        </label>
       </div>
       <ul className="grid grid-cols-2 gap-3">
         {list.map((r) => {
@@ -60,6 +69,7 @@ export default function RecipesScreen() {
                   </p>
                   <div className={cx('mt-1.5 flex flex-wrap gap-1')}>
                     {r.fixedSlot && <Badge>fixed</Badge>}
+                    {cover.get(r.id) && <Badge tone="ember">{Math.round(cover.get(r.id)!.coverage * 100)}% in stock</Badge>}
                     <Badge tone="leaf">{r.cuisine}</Badge>
                   </div>
                 </div>

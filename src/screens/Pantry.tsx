@@ -7,6 +7,9 @@ import { db, pantry, repo, today } from '../db/instance'
 import { newId, nowIso } from '../db/repo'
 import type { Food, InventoryLot, Product, QtyUnit, WasteRecord } from '../db/types'
 import { addDays } from '../engines/nutrition/engine'
+import { bestFoodMatch } from '../lib/foodMatch'
+import { usePantrySuggestions } from '../lib/hooks'
+import { Link } from 'react-router-dom'
 
 const LOCATIONS: InventoryLot['location'][] = ['fridge', 'freezer', 'pantry']
 const LOC_LABEL = { fridge: 'Fridge', freezer: 'Freezer', pantry: 'Pantry' }
@@ -62,6 +65,7 @@ export default function PantryScreen() {
           </Card>
         )
       })}
+      <PantrySuggestions />
       <p className="px-1 text-xs text-stone-500">Expiry is advisory: the app ranks by the dates you enter and cannot judge whether food is safe.</p>
       {adding && <AddLot products={products ?? []} onClose={() => setAdding(false)} />}
       {lotOpen && <LotSheet lot={lotOpen} product={pmap.get(lotOpen.productId)} onClose={() => setLotOpen(null)} />}
@@ -86,6 +90,8 @@ function AddLot({ products, onClose }: { products: Product[]; onClose: () => voi
   const [expiryKind, setExpiryKind] = useState<'use_by' | 'best_before'>('use_by')
   const [location, setLocation] = useState<InventoryLot['location']>('fridge')
   const [error, setError] = useState<string>()
+  const allFoods = useLiveQuery(() => db.foods.toArray())
+  const autoFood = useMemo(() => (creating && !food && allFoods ? bestFoodMatch(q, allFoods)?.food ?? null : null), [creating, food, allFoods, q])
   const fuse = useMemo(() => new Fuse(products, { keys: ['name', 'brand'], threshold: 0.4 }), [products])
   const matches = q ? fuse.search(q, { limit: 6 }).map((r) => r.item) : []
 
@@ -99,7 +105,7 @@ function AddLot({ products, onClose }: { products: Product[]; onClose: () => voi
       await repo.tx(async () => {
         let p = product
         if (!p) {
-          p = { id: newId(), name: q.trim(), category: newCat, storage: newStorage, foodId: food?.id, createdAt: nowIso() }
+          p = { id: newId(), name: q.trim(), category: newCat, storage: newStorage, foodId: (food ?? autoFood)?.id, createdAt: nowIso() }
           await repo.insert('products', p)
         }
         await pantry.addLot({ productId: p.id, quantity, unit, totalCostCents: cents, purchaseDate: bought, expiryDate: expiry || undefined, expiryKind: expiry ? expiryKind : undefined, location })
@@ -136,8 +142,8 @@ function AddLot({ products, onClose }: { products: Product[]; onClose: () => voi
                   <Field label="Category"><Select value={newCat} onChange={(e) => setNewCat(e.target.value)}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</Select></Field>
                   <Field label="Usually kept in"><Select value={newStorage} onChange={(e) => { const s = e.target.value as Product['storage']; setNewStorage(s); setLocation(s) }}>{LOCATIONS.map((l) => <option key={l} value={l}>{LOC_LABEL[l]}</option>)}</Select></Field>
                 </div>
-                <Field label="Nutrition food" hint="Links the product to its nutrient data, so recipes can use stock and cost.">
-                  <Button variant="secondary" className="w-full" onClick={() => setPickFood(true)}>{food ? food.name : 'Choose food (optional)'}</Button>
+                <Field label="Nutrition food" hint={autoFood ? 'Matched from the name; tap to change.' : 'Links the product to its nutrient data, so recipes can suggest it.'}>
+                  <Button variant="secondary" className="w-full" onClick={() => setPickFood(true)}>{food ? food.name : autoFood ? autoFood.name : 'Choose food (optional)'}</Button>
                 </Field>
               </div>
             )}
@@ -213,5 +219,28 @@ function LotSheet({ lot: initial, product, onClose }: { lot: InventoryLot; produ
         </div>
       </div>
     </Sheet>
+  )
+}
+
+function PantrySuggestions() {
+  const s = usePantrySuggestions(6)
+  if (!s || s.length === 0) return null
+  return (
+    <Card title="Cook from your pantry">
+      <ul className="divide-y divide-stone-100">
+        {s.map((x) => (
+          <li key={x.recipe.id}>
+            <Link to={`/recipes/${x.recipe.id}`} className="block py-2.5">
+              <p className="font-medium text-stone-800">{x.recipe.name}</p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                <Badge tone="leaf">{Math.round(x.coverage * 100)}% in stock</Badge>
+                {x.usesSoon.length > 0 && <Badge tone="ember">uses {x.usesSoon[0].toLowerCase()} soon</Badge>}
+              </div>
+              <p className="mt-1 text-xs text-stone-500">{x.missing.length ? `Need: ${x.missing.join(', ')}` : 'You have everything'}</p>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
   )
 }

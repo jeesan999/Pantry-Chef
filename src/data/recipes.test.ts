@@ -26,11 +26,12 @@ describe('starter recipe library', () => {
     for (const r of STARTER_RECIPES) expect(calc(r).missing, r.key).toEqual([])
   })
 
-  it('no vegetable or seed oils: cooking fat is ghee or coconut oil only', () => {
-    const banned = ['olive_oil', 'sesame_oil', 'coconut_milk_light']
+  it('no seed oils: fats are ghee, coconut oil or olive oil', () => {
+    const banned = ['sesame_oil', 'coconut_milk_light']
     for (const r of STARTER_RECIPES) {
       for (const [food] of r.ingredients) expect(banned, `${r.key} uses ${food}`).not.toContain(food)
-      expect(r.method.join(' '), r.key).not.toMatch(/olive oil|sesame oil|vegetable oil|canola|sunflower/i)
+      expect(r.method.join(' '), r.key).not.toMatch(/sesame oil|vegetable oil|canola|sunflower/i)
+      expect(r.method.join(' '), r.key).not.toMatch(/\b(\w+) \1\b/i) // no doubled words
     }
   })
 

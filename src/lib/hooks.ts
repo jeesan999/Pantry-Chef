@@ -1,5 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db, repo } from '../db/instance'
+import { db, repo, today } from '../db/instance'
+import { suggestFromPantry } from './suggest'
 import { CONTRACT_VERSION } from '../engines/contract'
 import { dayChoices } from './schedule'
 import { PROFILE_ID, SETTINGS_ID } from '../db/seed'
@@ -34,4 +35,19 @@ export function useAllRecipeNutrition(): Map<string, RecipeNutrition> | undefine
     }
     return new Map(recipes.map((r: Recipe) => [r.id, recipeNutrition(byRecipe.get(r.id) ?? [], foodMap, r.servings, yields)]))
   })
+}
+
+/** Recipes ranked by how much of each is in the pantry (see lib/suggest.ts). */
+export function usePantrySuggestions(limit = 64) {
+  return useLiveQuery(async () => {
+    const [recipes, ingredients, foods, yields, products, lots] = await Promise.all([
+      db.recipes.toArray(),
+      db.recipe_ingredients.toArray(),
+      db.foods.toArray(),
+      db.cooking_yields.toArray(),
+      db.products.toArray(),
+      db.inventory_lots.toArray(),
+    ])
+    return suggestFromPantry({ recipes, ingredients, foods: new Map(foods.map((f) => [f.id, f])), yields, products, lots, today: today(), limit })
+  }, [limit])
 }
