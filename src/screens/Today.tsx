@@ -11,6 +11,8 @@ import { SLOT_LABEL, SLOT_TAGS, assignMeal, clearMeal, targetsForDate } from '..
 import { DayTypeSwitch } from '../components/DayTypeSwitch'
 import { useAllRecipeNutrition, useApprovedTargets, useDayChoices, usePantrySuggestions, useProfile } from '../lib/hooks'
 import { addNutrients, emptyNutrients, portionForProtein, scaleNutrients } from '../lib/nutrition'
+import { budgetStatuses } from '../lib/expenses'
+import { BudgetAlerts } from './expenses/BudgetAlerts'
 
 export default function TodayScreen() {
   const date = today()
@@ -20,6 +22,7 @@ export default function TodayScreen() {
   const recipes = useLiveQuery(() => db.recipes.toArray())
   const planned = useLiveQuery(() => db.planned_meals.where('date').equals(date).toArray(), [date])
   const [picking, setPicking] = useState<SlotName | null>(null)
+  const budgets = useLiveQuery(() => budgetStatuses(repo, date), [date])
 
   const choice = useDayChoices([date])?.[0]
   const day = approved && choice ? targetsForDate(approved.targetSet, choice) : null
@@ -54,6 +57,7 @@ export default function TodayScreen() {
         </span>
       }
     >
+      <BudgetAlerts statuses={budgets} link />
       {!profile.confirmed && (
         <Notice>
           Your profile uses starting values (81 kg, age 41, 180 cm). <Link to="/settings" className="font-medium underline">Check them in Settings</Link>.

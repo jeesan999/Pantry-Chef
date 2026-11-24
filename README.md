@@ -4,10 +4,14 @@ An installable, offline-first web app for meal planning, nutrition targets, pant
 All data stays on your device. No accounts, API keys or paid services. Once installed, the app makes
 no network requests (a Content Security Policy blocks them).
 
-## Status: Phase 2 (core app)
+## Status: Phase 4 (expenses)
 
 - 11 screens with navigation; Today, Plan, Recipes, Pantry, Goals & Targets, Progress (weigh-ins) and Settings work now;
-  Scan Receipt (Phase 3), Expenses (Phase 4), Shopping List (Phase 5) and Chef (Phase 6) are labelled shells.
+  Scan Receipt and Expenses work too; Shopping List (Phase 5) and Chef (Phase 6) are labelled shells.
+- Expenses: spending by week, month and year, by store, category and food type; weekly and monthly budgets with
+  alerts (also on Today); manual expenses; price history; estimated cost per meal and per day; protein per dollar.
+  The calculations are pure functions in `src/engines/cost/engine.ts`; meal costs use the latest price paid and are
+  marked partial, never guessed, when an ingredient has no price yet.
 - 30-table IndexedDB database (Dexie) with foreign keys, validation, transactions and an append-only pantry ledger
   enforced in `src/db/repo.ts` and `src/db/pantry.ts`.
 - Engine A (Nutrition) in `src/engines/nutrition/engine.ts`: pure functions, emits the `TargetSet` contract in

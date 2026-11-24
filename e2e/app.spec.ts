@@ -205,6 +205,38 @@ test('scan a receipt photo: read on the phone, check, save to pantry; the same p
   await page.goto('/#/pantry')
   await expect(page.getByText('Chicken Breast Fillets 1kg')).toBeVisible()
   await expect(page.getByText('Cook from your pantry')).toBeVisible()
+  // the receipt is in Expenses: total for its month, household split, a price, a protein-per-dollar row
+  await page.goto('/#/expenses')
+  await page.getByRole('radio', { name: 'Month' }).click()
+  while (!(await page.getByText(/^Nov 2026/).isVisible())) await page.getByRole('button', { name: 'Previous period' }).click()
+  await expect(page.getByTestId('period-total')).toHaveText('$49.88')
+  await page.getByRole('radio', { name: 'Category' }).click()
+  await expect(page.getByText('$6.50 · 13%')).toBeVisible() // household share
+  await expect(page.getByText(/after discounts · 1 purchase/)).toBeVisible() // price history
+  await expect(page.getByText(/g \/ \$/).first()).toBeVisible()
+})
+
+test('Expenses: add by hand, set a budget, get warned on Today, delete', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-11-26T10:00:00'))
+  await page.goto('/#/expenses')
+  await expect(page.getByTestId('period-total')).toHaveText('$0.00')
+  await page.getByRole('button', { name: 'Add', exact: true }).click()
+  await page.getByLabel('Where').fill('Farmers market')
+  await page.getByLabel('Amount ($)').fill('1234.5')
+  await page.getByLabel('Category').selectOption('Groceries')
+  await page.getByRole('button', { name: 'Add expense' }).click()
+  await expect(page.getByTestId('period-total')).toHaveText('$1,234.50')
+  await page.getByRole('button', { name: 'Set budget' }).click()
+  await page.getByLabel('Weekly budget ($)').fill('1000')
+  await page.getByRole('button', { name: 'Save budgets' }).click()
+  await expect(page.getByText(/Over this week's budget by \$234\.50/)).toBeVisible()
+  await expect(page.getByText('over budget')).toBeVisible()
+  await page.goto('/#/')
+  await expect(page.getByText(/Over this week's budget/)).toBeVisible()
+  await page.getByRole('link', { name: 'See expenses' }).click()
+  await page.getByRole('button', { name: /Delete Farmers market/ }).click()
+  await expect(page.getByTestId('period-total')).toHaveText('$0.00')
+  await expect(page.getByText(/Over this week's budget/)).toHaveCount(0)
 })
 
 test('scan a hard photo (faded, tilted, shadowed): still reads the shop correctly', async ({ page }) => {
