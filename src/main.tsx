@@ -3,13 +3,14 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
 import { repo, today } from './db/instance'
-import { seedIfEmpty } from './db/seed'
+import { ensureInterimFoods, seedIfEmpty } from './db/seed'
 import { ensureAfcdLoaded } from './data/afcd'
 
 async function start() {
   const root = createRoot(document.getElementById('root')!)
   try {
     await seedIfEmpty(repo, today())
+    await ensureInterimFoods(repo)
     await ensureAfcdLoaded(repo)
     // Ask the browser not to clear this site's data under storage pressure.
     if (navigator.storage?.persist) await navigator.storage.persist().catch(() => false)

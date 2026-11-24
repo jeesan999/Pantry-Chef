@@ -177,3 +177,17 @@ export async function updateBreakfast(repo: Repo, b: Settings['breakfast']): Pro
     for (const ing of breakfastIngredients(b)) await repo.insert('recipe_ingredients', ing)
   })
 }
+
+/** Add any interim foods introduced in later versions to an existing database (never overwrites). */
+export async function ensureInterimFoods(repo: Repo): Promise<number> {
+  let added = 0
+  await repo.tx(async () => {
+    for (const f of INTERIM_FOODS) {
+      if (await repo.db.foods.get(f.id)) continue
+      const { key: _k, afcdSearch: _s, ...food } = f
+      await repo.insert('foods', food)
+      added++
+    }
+  })
+  return added
+}

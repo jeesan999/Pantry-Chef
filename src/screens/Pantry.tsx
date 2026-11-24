@@ -1,5 +1,4 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import Fuse from 'fuse.js'
 import { useMemo, useState } from 'react'
 import { FoodPicker } from '../components/FoodPicker'
 import { Badge, Button, Card, Field, Input, Notice, Page, Select, Sheet, fmt } from '../components/ui'
@@ -8,6 +7,7 @@ import { newId, nowIso } from '../db/repo'
 import type { Food, InventoryLot, Product, QtyUnit, WasteRecord } from '../db/types'
 import { addDays } from '../engines/nutrition/engine'
 import { bestFoodMatch } from '../lib/foodMatch'
+import { guessCategory, guessStorage, searchItems } from '../lib/itemSearch'
 import { usePantrySuggestions } from '../lib/hooks'
 import { Link } from 'react-router-dom'
 
@@ -73,11 +73,24 @@ export default function PantryScreen() {
   )
 }
 
+type Picked =
+  | { kind: 'product'; product: Product }
+  | { kind: 'food'; food: Food; name: string }
+  | { kind: 'new'; name: string }
+
+const defaultUnit = (f?: Food | null): QtyUnit => {
+  if (!f) return 'g'
+  if (f.gramsPerUnit && /egg|avocado|banana|apple|capsicum|onion|tomato|carrot|zucchini|wrap|sausage/i.test(f.name)) return 'unit'
+  if (f.densityGPerMl && /milk|oil|sauce|vinegar|stock|cream|juice|syrup/i.test(f.name)) return 'ml'
+  return 'g'
+}
+
+/** Manual entry: type what you bought and pick a suggestion; works when receipt scanning fails. */
 function AddLot({ products, onClose }: { products: Product[]; onClose: () => void }) {
   const now = today()
+  const foods = useLiveQuery(() => db.foods.toArray())
   const [q, setQ] = useState('')
-  const [product, setProduct] = useState<Product | null>(null)
-  const [creating, setCreating] = useState(false)
+  const [picked, setPicked] = useState<Picked | null>(null)
   const [newCat, setNewCat] = useState(CATEGORIES[0])
   const [newStorage, setNewStorage] = useState<Product['storage']>('fridge')
   const [food, setFood] = useState<Food | null>(null)
@@ -90,65 +103,144 @@ function AddLot({ products, onClose }: { products: Product[]; onClose: () => voi
   const [expiryKind, setExpiryKind] = useState<'use_by' | 'best_before'>('use_by')
   const [location, setLocation] = useState<InventoryLot['location']>('fridge')
   const [error, setError] = useState<string>()
-  const allFoods = useLiveQuery(() => db.foods.toArray())
-  const autoFood = useMemo(() => (creating && !food && allFoods ? bestFoodMatch(q, allFoods)?.food ?? null : null), [creating, food, allFoods, q])
-  const fuse = useMemo(() => new Fuse(products, { keys: ['name', 'brand'], threshold: 0.4 }), [products])
-  const matches = q ? fuse.search(q, { limit: 6 }).map((r) => r.item) : []
+  const [added, setAdded] = useState<string[]>([])
 
-  const save = async () => {
+  const hits = useMemo(() => (q.trim() && !picked && foods ? searchItems(q, products, foods, 8) : []), [q, picked, products, foods])
+  const autoFood = useMemo(
+    () => (picked?.kind === 'new' && !food && foods ? bestFoodMatch(picked.name, foods)?.food ?? null : null),
+    [picked, food, foods],
+  )
+
+  const choose = (p: Picked) => {
+    setPicked(p)
+    setError(undefined)
+    if (p.kind === 'product') {
+      setLocation(p.product.storage)
+      setUnit(p.product.packUnit ?? defaultUnit(foods?.find((f) => f.id === p.product.foodId)))
+    } else {
+      const name = p.kind === 'food' ? p.name : p.name
+      const cat = guessCategory(p.kind === 'food' ? p.food.name : name)
+      const store = guessStorage(cat, p.kind === 'food' ? p.food.name : name)
+      setNewCat(cat)
+      setNewStorage(store)
+      setLocation(store)
+      const f = p.kind === 'food' ? p.food : foods ? bestFoodMatch(name, foods)?.food : undefined
+      setUnit(defaultUnit(f))
+    }
+  }
+
+  const reset = () => {
+    setQ(''); setPicked(null); setFood(null); setQty(''); setCost(''); setExpiry(''); setError(undefined)
+  }
+
+  const save = async (another: boolean) => {
     setError(undefined)
     const quantity = Number(qty)
     const cents = Math.round(Number(cost || 0) * 100)
-    if (!(quantity > 0)) return setError('Enter how much you have.')
-    if (!product && !(creating && q.trim())) return setError('Choose a product or create one.')
+    if (!picked) return setError('Type what you bought and pick a suggestion, or add it as a new item.')
+    if (!(quantity > 0)) return setError('Enter how much you bought.')
     try {
+      let name = ''
       await repo.tx(async () => {
-        let p = product
-        if (!p) {
-          p = { id: newId(), name: q.trim(), category: newCat, storage: newStorage, foodId: (food ?? autoFood)?.id, createdAt: nowIso() }
+        let p: Product
+        if (picked.kind === 'product') p = picked.product
+        else {
+          name = picked.name.trim()
+          const foodId = picked.kind === 'food' ? picked.food.id : (food ?? autoFood)?.id
+          p = { id: newId(), name, category: newCat, storage: newStorage, foodId, createdAt: nowIso() }
           await repo.insert('products', p)
         }
+        name = p.name
         await pantry.addLot({ productId: p.id, quantity, unit, totalCostCents: cents, purchaseDate: bought, expiryDate: expiry || undefined, expiryKind: expiry ? expiryKind : undefined, location })
       })
-      onClose()
+      if (another) {
+        setAdded((a) => [...a, name])
+        reset()
+      } else onClose()
     } catch (e) {
       setError((e as Error).message)
     }
   }
 
+  const pickedName = picked ? (picked.kind === 'product' ? picked.product.name : picked.name) : ''
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()} title="Add to pantry">
       <div className="space-y-3">
+        {added.length > 0 && <Notice tone="leaf">Added {added.length}: {added.join(', ')}</Notice>}
         {error && <Notice tone="red">{error}</Notice>}
-        {product ? (
-          <div className="flex items-center justify-between rounded-xl bg-leaf-50 px-3 py-2">
-            <span className="font-medium text-leaf-900">{product.name}</span>
-            <button className="text-sm text-leaf-700" onClick={() => setProduct(null)}>Change</button>
+        {picked ? (
+          <div className="rounded-xl bg-leaf-50 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium text-leaf-900">{pickedName}</span>
+              <button className="min-h-10 px-2 text-sm text-leaf-700" onClick={() => { setPicked(null); setFood(null) }}>Change</button>
+            </div>
+            {picked.kind === 'food' && <p className="text-xs text-stone-600">From the food list: {picked.food.name}</p>}
+            {picked.kind === 'product' && <p className="text-xs text-stone-600">Bought before</p>}
           </div>
         ) : (
-          <>
-            <Field label="Product"><Input placeholder="e.g. Chicken breast fillets" value={q} onChange={(e) => { setQ(e.target.value); setCreating(false) }} /></Field>
-            {matches.length > 0 && !creating && (
-              <ul className="rounded-xl border border-stone-200">
-                {matches.map((m) => (
-                  <li key={m.id}><button className="w-full px-3 py-2.5 text-left text-sm" onClick={() => { setProduct(m); setLocation(m.storage); setUnit(m.packUnit ?? unit) }}>{m.name}</button></li>
+          <div>
+            <Field label="What did you buy?">
+              <Input
+                autoFocus
+                autoComplete="off"
+                role="combobox"
+                aria-expanded={hits.length > 0}
+                aria-controls="item-suggestions"
+                placeholder="Start typing, e.g. chicken, soy sauce, mayo"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && q.trim()) {
+                    e.preventDefault()
+                    const h = hits[0]
+                    choose(h ? (h.kind === 'product' ? { kind: 'product', product: h.product } : { kind: 'food', food: h.food, name: h.label }) : { kind: 'new', name: q.trim() })
+                  }
+                }}
+              />
+            </Field>
+            {q.trim() && (
+              <ul id="item-suggestions" role="listbox" aria-label="Suggestions" className="mt-1 max-h-72 overflow-y-auto rounded-xl border border-stone-200">
+                {hits.map((h) => (
+                  <li key={h.kind === 'product' ? h.product.id : h.food.id} role="option" aria-selected={false}>
+                    <button
+                      type="button"
+                      className="flex min-h-12 w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm hover:bg-leaf-50"
+                      onClick={() => choose(h.kind === 'product' ? { kind: 'product', product: h.product } : { kind: 'food', food: h.food, name: h.label })}
+                    >
+                      <span className="text-stone-800">{h.label}</span>
+                      {h.kind === 'product' ? <Badge tone="leaf">bought before</Badge> : <Badge>{guessCategory(h.food.name)}</Badge>}
+                    </button>
+                  </li>
                 ))}
+                <li role="option" aria-selected={false}>
+                  <button type="button" className="flex min-h-12 w-full items-center px-3 py-2 text-left text-sm font-medium text-leaf-700 hover:bg-leaf-50" onClick={() => choose({ kind: 'new', name: q.trim() })}>
+                    Add “{q.trim()}” as a new item
+                  </button>
+                </li>
               </ul>
             )}
-            {q.trim() && !creating && <Button variant="secondary" className="w-full" onClick={() => setCreating(true)}>Create “{q.trim()}” as a new product</Button>}
-            {creating && (
-              <div className="space-y-2 rounded-xl border border-stone-200 p-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Category"><Select value={newCat} onChange={(e) => setNewCat(e.target.value)}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</Select></Field>
-                  <Field label="Usually kept in"><Select value={newStorage} onChange={(e) => { const s = e.target.value as Product['storage']; setNewStorage(s); setLocation(s) }}>{LOCATIONS.map((l) => <option key={l} value={l}>{LOC_LABEL[l]}</option>)}</Select></Field>
-                </div>
-                <Field label="Nutrition food" hint={autoFood ? 'Matched from the name; tap to change.' : 'Links the product to its nutrient data, so recipes can suggest it.'}>
-                  <Button variant="secondary" className="w-full" onClick={() => setPickFood(true)}>{food ? food.name : autoFood ? autoFood.name : 'Choose food (optional)'}</Button>
-                </Field>
-              </div>
-            )}
-          </>
+          </div>
         )}
+
+        {picked && picked.kind !== 'product' && (
+          <div className="space-y-2 rounded-xl border border-stone-200 p-3">
+            {picked.kind === 'food' && (
+              <Field label="Name (as on the pack)" hint="Optional; helps match future receipts">
+                <Input value={picked.name} onChange={(e) => setPicked({ ...picked, name: e.target.value })} />
+              </Field>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Category"><Select value={newCat} onChange={(e) => setNewCat(e.target.value)}>{CATEGORIES.map((c) => <option key={c}>{c}</option>)}</Select></Field>
+              <Field label="Usually kept in"><Select value={newStorage} onChange={(e) => { const st = e.target.value as Product['storage']; setNewStorage(st); setLocation(st) }}>{LOCATIONS.map((l) => <option key={l} value={l}>{LOC_LABEL[l]}</option>)}</Select></Field>
+            </div>
+            {picked.kind === 'new' && (
+              <Field label="Nutrition food" hint={autoFood ? 'Matched from the name; tap to change.' : 'Optional: links it to nutrient data so recipes can suggest it.'}>
+                <Button variant="secondary" className="w-full" onClick={() => setPickFood(true)}>{food ? food.name : autoFood ? autoFood.name : 'Choose food (optional)'}</Button>
+              </Field>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-[1fr_6rem] gap-2">
           <Field label="Quantity"><Input inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} /></Field>
           <Field label="Unit"><Select value={unit} onChange={(e) => setUnit(e.target.value as QtyUnit)}><option value="g">g</option><option value="ml">ml</option><option value="unit">each</option></Select></Field>
@@ -162,7 +254,10 @@ function AddLot({ products, onClose }: { products: Product[]; onClose: () => voi
           <Field label="Date type"><Select value={expiryKind} onChange={(e) => setExpiryKind(e.target.value as 'use_by' | 'best_before')}><option value="use_by">Use by</option><option value="best_before">Best before</option></Select></Field>
         </div>
         <Field label="Location"><Select value={location} onChange={(e) => setLocation(e.target.value as InventoryLot['location'])}>{LOCATIONS.map((l) => <option key={l} value={l}>{LOC_LABEL[l]}</option>)}</Select></Field>
-        <Button className="w-full" onClick={save}>Add to pantry</Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button onClick={() => save(false)}>Add to pantry</Button>
+          <Button variant="secondary" onClick={() => save(true)}>Add and enter another</Button>
+        </div>
       </div>
       <FoodPicker open={pickFood} onClose={() => setPickFood(false)} onPick={(f) => { setFood(f); setPickFood(false) }} />
     </Sheet>
