@@ -95,6 +95,18 @@ const ROWS: Row[] = [
   ['spice_mix', 'Spices, mixed, dried', 'na', 300, 12, 10, 1, 30, 5, 0, 25, 50, null, null, 'spice'],
   ['herbs', 'Herbs, fresh (coriander, parsley, basil)', 'raw', 30, 2.5, 0.5, 0, 1, 0.8, 0, 3, 30, null, null, 'coriander raw'],
   ['passata', 'Tomato, passata', 'na', 30, 1.5, 0.2, 0, 5, 4.5, 0, 1.5, 15, null, 1.03, 'tomato puree'],
+  // Added 24 Nov 2026: cooking fats (no vegetable or seed oils), full-fat dairy, fattier cuts.
+  ['coconut_oil', 'Oil, coconut', 'na', 892, 0, 99.1, 82.5, 0, 0, 0, 0, 0, null, 0.92, 'oil coconut'],
+  ['cream', 'Cream, pure (35% fat)', 'na', 340, 2.2, 35, 23, 3, 3, 0, 0, 30, null, 1.0, 'cream pure'],
+  ['milk_full', 'Milk, cow, fluid, regular fat', 'na', 65, 3.4, 3.5, 2.3, 4.7, 4.7, 0, 0, 40, null, 1.03, 'milk cow fluid regular fat'],
+  ['greek_yoghurt_full', 'Yoghurt, Greek style, natural, full fat', 'na', 130, 6, 10, 6.6, 4.5, 4.5, 0, 0, 45, null, 1.03, 'yoghurt greek full fat'],
+  ['cheddar', 'Cheese, cheddar, natural', 'na', 400, 25, 33, 21, 0, 0, 0, 0, 650, null, null, 'cheese cheddar natural'],
+  ['beef_mince_regular', 'Beef, mince, regular fat, raw', 'raw', 220, 19, 16, 6.5, 0, 0, 0, 0, 70, null, null, 'beef mince regular raw'],
+  ['chicken_thigh_skin', 'Chicken, thigh, flesh and skin, raw', 'raw', 210, 17.5, 15.5, 4.5, 0, 0, 0, 0, 80, null, null, 'chicken thigh flesh skin raw'],
+  ['lamb_chop', 'Lamb, loin chop, lean and fat, raw', 'raw', 260, 17.5, 21, 9.5, 0, 0, 0, 0, 65, null, null, 'lamb loin chop lean fat raw'],
+  ['pork_shoulder', 'Pork, shoulder, lean and fat, raw', 'raw', 215, 18, 16, 5.8, 0, 0, 0, 0, 65, null, null, 'pork shoulder lean fat raw'],
+  ['coconut_milk', 'Coconut milk, canned', 'na', 200, 1.9, 20, 17.5, 3, 2.5, 0, 0, 15, null, 1.0, 'coconut milk canned'],
+  ['macadamia', 'Macadamia nut, raw', 'raw', 740, 9, 76, 12, 4.5, 4, 0, 6.5, 2, null, null, 'macadamia raw'],
 ]
 
 export const INTERIM_FOOD_ID = (key: string) => `food:${key}`

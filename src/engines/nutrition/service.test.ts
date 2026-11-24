@@ -4,6 +4,8 @@ import { newId, Repo } from '../../db/repo'
 import { seedIfEmpty, updateBreakfast } from '../../db/seed'
 import { on } from '../../lib/events'
 import { approveTargets, approvedTargets, changeGoal, fixedBreakfastNutrition, proposeTargets } from './service'
+import { clearDayChoice, dayChoice, dayChoices, setDayType } from '../../lib/schedule'
+import { resolveDay } from '../contract'
 
 let repo: Repo
 beforeEach(async () => {
@@ -83,5 +85,48 @@ describe('targets: propose -> approve -> version', () => {
     await repo.insert('weight_measurements', { id: newId(), profileId: 'profile:me', date: '2026-11-24', weightKg: 79, timeOfDay: 'morning' })
     const { record } = await proposeTargets(repo, '2026-11-24')
     expect(record.inputs.weightKg).toBe(79)
+  })
+})
+
+describe('training or rest, chosen per day', () => {
+  it('usual week is the default: Mon/Tue/Thu/Fri training at 12:15, others rest', async () => {
+    const week = await dayChoices(repo, ['2026-11-23', '2026-11-24', '2026-11-25', '2026-11-26', '2026-11-27', '2026-11-28', '2026-11-29'])
+    expect(week.map((d) => d.dayType)).toEqual(['training', 'training', 'rest', 'training', 'training', 'rest', 'rest'])
+    expect(week[0].workout?.start).toBe('12:15')
+    expect(week.every((d) => d.source === 'usual')).toBe(true)
+  })
+
+  it('a usual training day can be made a rest day, and a rest day a training day; clearing restores the usual', async () => {
+    await setDayType(repo, '2026-11-23', 'rest') // Monday
+    await setDayType(repo, '2026-11-29', 'training', '09:00') // Sunday
+    expect(await dayChoice(repo, '2026-11-23')).toMatchObject({ dayType: 'rest', source: 'chosen' })
+    expect(await dayChoice(repo, '2026-11-29')).toMatchObject({ dayType: 'training', source: 'chosen', workout: { start: '09:00' } })
+    await setDayType(repo, '2026-11-23', 'training')
+    expect((await dayChoice(repo, '2026-11-23')).dayType).toBe('training')
+    expect(await repo.db.workouts.where('date').equals('2026-11-23').count()).toBe(1) // updated, not duplicated
+    await clearDayChoice(repo, '2026-11-29')
+    expect(await dayChoice(repo, '2026-11-29')).toMatchObject({ dayType: 'rest', source: 'usual' })
+    expect(await repo.checkIntegrity()).toEqual([])
+  })
+
+  it('switching a day needs no re-approval: approved v1 already holds both day types', async () => {
+    const p = await proposeTargets(repo, '2026-11-24')
+    const a = await approveTargets(repo, p.record.id)
+    await setDayType(repo, '2026-11-25', 'training')
+    const c = await dayChoice(repo, '2026-11-25')
+    const d = resolveDay(a.targetSet, c.date, c.dayType, c.workout)
+    expect(d.dayType).toBe('training')
+    expect(d.slots.smoko.digestibility).toBe('high')
+    expect((await approvedTargets(repo))!.version).toBe(1)
+  })
+
+  it('approved targets: 2,690 kcal, 150 g carbs, fat fills the rest, no sat fat limit', async () => {
+    const p = await proposeTargets(repo, '2026-11-24')
+    const t = p.record.targetSet.templates.rest
+    expect(t.energyKcal).toBe(2690)
+    expect(t.carbsG).toBe(150)
+    expect(t.satFatMaxG).toBeNull()
+    // fat = (2690 − 138x4 − 150x4)/9 = 170.9 -> 171
+    expect(t.fatG).toBe(171)
   })
 })

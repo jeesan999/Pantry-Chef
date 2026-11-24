@@ -30,18 +30,26 @@ export function defaultSettings(): Settings {
     activityFactor: 1.55,
     proteinMinG: 130,
     proteinMaxGPerKg: 2.0,
+    // Agreed 24 Nov 2026: 150 g carbs a day across smoko, lunch and dinner; fat fills the rest.
+    carbMode: 'fixed',
+    carbsPerDayG: 150,
     fatPctEnergy: 30,
+    satFatLimitEnabled: false, // user does not follow the saturated fat guideline; still tracked
     satFatPctEnergy: 10,
     fibreMinG: 30,
     addedSugarPctEnergy: 5,
-    restDayCarbReductionPct: 15,
+    restDayCarbReductionPct: 0,
+    trainingDaysPerWeek: 4,
+    defaultWorkout: { start: '12:15', durationMin: 60, type: 'strength' },
     slotProtein: {
       breakfast: { min: 32, preferred: 32, max: 36 },
       smoko: { min: 25, preferred: 28, max: 32 },
       lunch: { min: 35, preferred: 40, max: 45 },
       dinner: { min: 35, preferred: 38, max: 45 },
     },
-    slotCarbShare: { smoko: 0.25, lunch: 0.55, dinner: 0.2 },
+    // Low-carb dinners; most carbs at smoko and the post-workout lunch.
+    slotCarbShare: { smoko: 0.27, lunch: 0.6, dinner: 0.13 },
+    slotFatShare: { smoko: 0.25, lunch: 0.35, dinner: 0.4 },
     breakfast: { eggs: 4, avocadoHalves: 1, baconRashers: 1, gheeG: 5 },
     fixedBreakfastRecipeId: FIXED_BREAKFAST_ID,
     backupReminderDays: 7,
@@ -138,7 +146,8 @@ export async function seedIfEmpty(repo: Repo, today: string): Promise<boolean> {
       startDate: today,
       createdAt: nowIso(),
     })
-    // Four training days, between smoko and lunch. Days are a guess: edit in Settings.
+    // A usual week: four training days between smoko and lunch. Only a default: the user picks
+    // training or rest for any date on the Plan or Today screen.
     for (const weekday of [0, 1, 3, 4]) {
       await repo.insert('training_schedule', {
         id: `training:${weekday}`,

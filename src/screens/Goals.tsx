@@ -1,5 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Badge, Button, Card, Field, Notice, Page, Select, fmt } from '../components/ui'
 import { db, repo, today } from '../db/instance'
 import type { NutritionTargetRecord } from '../db/types'
@@ -10,7 +11,6 @@ import { SLOT_LABEL } from '../lib/day'
 import { useApprovedTargets, useProposedTargets } from '../lib/hooks'
 import { SLOTS } from '../engines/contract'
 
-const WEEKDAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export default function GoalsScreen() {
   const approved = useApprovedTargets()
@@ -79,7 +79,7 @@ export default function GoalsScreen() {
             {history.map((h) => (
               <li key={h.id} className="tabular flex justify-between text-stone-600">
                 <span>v{h.version} · {GOAL_RULES[h.targetSet.goal].label}</span>
-                <span>{fmt.kcal(h.targetSet.days[2].energyKcal)} rest · approved {h.approvedAt?.slice(0, 10)}</span>
+                <span>{fmt.kcal(h.targetSet.templates?.rest.energyKcal ?? 0)} · approved {h.approvedAt?.slice(0, 10)}</span>
               </li>
             ))}
           </ul>
@@ -117,12 +117,11 @@ function GoalCard({ goalType, adjust, busy, onChange }: { goalType: GoalType; ad
 
 function TargetsView({ rec, compareTo }: { rec: NutritionTargetRecord; compareTo?: NutritionTargetRecord }) {
   const i = rec.inputs
-  const days = rec.targetSet.days
-  const train = days.find((d) => d.dayType === 'training')
-  const rest = days.find((d) => d.dayType === 'rest')
+  const { training: train, rest } = rec.targetSet.templates
+  const prev = compareTo?.targetSet.templates?.rest
   const act = ACTIVITY_LEVELS.find((a) => a.factor === i.activityFactor)
-  const prevRest = compareTo?.targetSet.days.find((d) => d.dayType === 'rest')
-  const d0 = train ?? rest!
+  const sat = (v: number | null) => (v === null ? undefined : v)
+  const rng = (r: [number, number]) => (r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`)
   return (
     <div className="space-y-3 text-sm">
       <div className="rounded-xl bg-stone-50 p-3 text-stone-700">
@@ -134,34 +133,34 @@ function TargetsView({ rec, compareTo }: { rec: NutritionTargetRecord; compareTo
       </div>
       <table className="tabular w-full">
         <thead className="text-left text-xs text-stone-500">
-          <tr><th className="py-1 font-medium">Per day</th><th className="font-medium">Training</th><th className="font-medium">Rest</th>{prevRest && <th className="font-medium">Was (rest)</th>}</tr>
+          <tr><th className="py-1 font-medium">Per day</th><th className="font-medium">Training</th><th className="font-medium">Rest</th>{prev && <th className="font-medium">Was (rest)</th>}</tr>
         </thead>
         <tbody className="divide-y divide-stone-100">
-          <TRow label="Energy" a={train?.energyKcal} b={rest?.energyKcal} c={prevRest?.energyKcal} unit="kcal" />
-          <TRow label="Protein (preferred)" a={train?.proteinG.preferred} b={rest?.proteinG.preferred} c={prevRest?.proteinG.preferred} unit="g" />
-          <TRow label="Protein floor" a={train?.proteinG.min} b={rest?.proteinG.min} c={prevRest?.proteinG.min} unit="g" />
-          <TRow label="Carbohydrate" a={train?.carbsG} b={rest?.carbsG} c={prevRest?.carbsG} unit="g" />
-          <TRow label="Fat" a={train?.fatG} b={rest?.fatG} c={prevRest?.fatG} unit="g" />
-          <TRow label="Saturated fat max" a={train?.satFatMaxG} b={rest?.satFatMaxG} c={prevRest?.satFatMaxG} unit="g" />
-          <TRow label="Fibre min" a={train?.fibreMinG} b={rest?.fibreMinG} c={prevRest?.fibreMinG} unit="g" />
-          <TRow label="Added sugar max" a={train?.addedSugarMaxG} b={rest?.addedSugarMaxG} c={prevRest?.addedSugarMaxG} unit="g" />
+          <TRow label="Energy" prev={!!prev} a={train.energyKcal} b={rest.energyKcal} c={prev?.energyKcal} unit="kcal" />
+          <TRow label="Protein (preferred)" prev={!!prev} a={train.proteinG.preferred} b={rest.proteinG.preferred} c={prev?.proteinG.preferred} unit="g" />
+          <TRow label="Protein floor" prev={!!prev} a={train.proteinG.min} b={rest.proteinG.min} c={prev?.proteinG.min} unit="g" />
+          <TRow label="Carbohydrate" prev={!!prev} a={train.carbsG} b={rest.carbsG} c={prev?.carbsG} unit="g" />
+          <TRow label="Fat" prev={!!prev} a={train.fatG} b={rest.fatG} c={prev?.fatG} unit="g" />
+          <TRow label="Saturated fat max" prev={!!prev} a={sat(train.satFatMaxG)} b={sat(rest.satFatMaxG)} c={prev ? sat(prev.satFatMaxG) : undefined} unit="g" empty="no limit" />
+          <TRow label="Fibre min" prev={!!prev} a={train.fibreMinG} b={rest.fibreMinG} c={prev?.fibreMinG} unit="g" />
+          <TRow label="Added sugar flag" prev={!!prev} a={train.addedSugarMaxG} b={rest.addedSugarMaxG} c={prev?.addedSugarMaxG} unit="g" />
         </tbody>
       </table>
       <div>
-        <p className="mb-1 text-xs font-medium text-stone-500">Meals on a {train ? 'training' : 'rest'} day</p>
+        <p className="mb-1 text-xs font-medium text-stone-500">Per meal (training day)</p>
         <table className="tabular w-full">
           <thead className="text-left text-xs text-stone-500">
-            <tr><th className="py-1 font-medium">Meal</th><th className="font-medium">Protein (g)</th><th className="font-medium">Carbs (g)</th></tr>
+            <tr><th className="py-1 font-medium">Meal</th><th className="font-medium">Protein (g)</th><th className="font-medium">Carbs (g)</th><th className="font-medium">Fat (g)</th></tr>
           </thead>
           <tbody className="divide-y divide-stone-100">
             {SLOTS.map((s) => {
-              const st = d0.slots[s]
-              const rng = (r: [number, number]) => (r[0] === r[1] ? `${r[0]}` : `${r[0]}–${r[1]}`)
+              const st = train.slots[s]
               return (
                 <tr key={s}>
                   <td className="py-1.5">{SLOT_LABEL[s]} <span className="text-stone-400">{st.time}</span></td>
                   <td>{rng(st.proteinG)}</td>
                   <td>{rng(st.carbsG)}</td>
+                  <td>{rng(st.fatG)}</td>
                 </tr>
               )
             })}
@@ -169,20 +168,20 @@ function TargetsView({ rec, compareTo }: { rec: NutritionTargetRecord; compareTo
         </table>
       </div>
       <p className="text-xs text-stone-500">
-        Training days: {days.flatMap((d, k) => (d.dayType === 'training' ? [WEEKDAY[k]] : [])).join(', ') || 'none'}
+        Choose which days are training or rest on the <Link to="/plan" className="underline">Plan</Link> screen; the matching targets apply automatically.
       </p>
     </div>
   )
 }
 
-function TRow({ label, a, b, c, unit }: { label: string; a?: number; b?: number; c?: number; unit: string }) {
-  const show = (v?: number) => (v === undefined ? '—' : `${v.toLocaleString()} ${unit}`)
+function TRow({ label, a, b, c, unit, empty = '—', prev }: { label: string; a?: number; b?: number; c?: number; unit: string; empty?: string; prev?: boolean }) {
+  const show = (v?: number) => (v === undefined ? empty : `${v.toLocaleString()} ${unit}`)
   return (
     <tr>
       <td className="py-1.5 text-stone-600">{label}</td>
       <td>{show(a)}</td>
       <td>{show(b)}</td>
-      {c !== undefined && <td className="text-stone-400">{show(c)}</td>}
+      {prev && <td className="text-stone-400">{show(c)}</td>}
     </tr>
   )
 }

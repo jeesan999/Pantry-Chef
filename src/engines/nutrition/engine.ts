@@ -5,21 +5,15 @@
 import {
   CONTRACT_VERSION,
   SLOTS,
-  type DayTargets,
+  resolveDay,
+  type DayTemplate,
+  type DayType,
   type GoalType,
   type SlotName,
   type SlotTargets,
-  type TargetSet,
-  type WorkoutType,
+  type WorkoutInfo,
 } from '../contract'
-
-export interface ScheduleDay {
-  weekday: number // 0 = Monday
-  type: WorkoutType
-  start: string
-  durationMin: number
-  intensity: 1 | 2 | 3
-}
+import type { TargetSet } from '../contract'
 
 export interface MacroSlice {
   energyKcal: number
@@ -28,6 +22,8 @@ export interface MacroSlice {
   fatG: number
   satFatG: number
 }
+
+export type CarbMode = 'fixed' | 'percent'
 
 export interface NutritionInputs {
   sex: 'male' | 'female'
@@ -39,15 +35,25 @@ export interface NutritionInputs {
   goalAdjustPct?: number
   proteinMinG: number
   proteinMaxGPerKg: number
-  fatPctEnergy: number
+  /**
+   * fixed: carbohydrate is a set number of grams a day and fat fills the rest of the energy.
+   * percent: fat is a set % of energy and carbohydrate fills the rest.
+   */
+  carbMode: CarbMode
+  carbsPerDayG: number // fixed mode
+  fatPctEnergy: number // percent mode
+  satFatLimitEnabled: boolean
   satFatPctEnergy: number
   fibreMinG: number
   addedSugarPctEnergy: number
-  restDayCarbReductionPct: number
+  restDayCarbReductionPct: number // carbs moved from rest to training days (0 = same every day)
+  trainingDaysPerWeek: number // nominal, used to keep the weekly carb total unchanged
   slotProtein: Record<SlotName, { min: number; preferred: number; max: number }>
   slotCarbShare: { smoko: number; lunch: number; dinner: number }
+  slotFatShare: { smoko: number; lunch: number; dinner: number }
   mealTimes: Record<SlotName, string>
-  schedule: ScheduleDay[]
+  /** Day type of each day of the proposal week (Mon..Sun), as chosen by the user. */
+  week: Array<{ dayType: DayType; workout?: WorkoutInfo }>
   breakfast: MacroSlice // the fixed breakfast, calculated from food data
   fixedBreakfastRecipeId?: string
   weekStart: string // a Monday, YYYY-MM-DD
@@ -119,12 +125,7 @@ export function mondayOf(date: string): string {
   return addDays(date, -dow)
 }
 
-const toMin = (hhmm: string) => {
-  const [h, m] = hhmm.split(':').map(Number)
-  return h * 60 + m
-}
-
-const r1 = (n: number) => Math.round(n * 10) / 10
+const range = (mid: number, spread: number): [number, number] => [Math.round(mid * (1 - spread)), Math.round(mid * (1 + spread))]
 
 export function computeTargets(inp: NutritionInputs): EngineResult {
   const warnings: string[] = []
@@ -143,94 +144,101 @@ export function computeTargets(inp: NutritionInputs): EngineResult {
   const slotPrefSum = SLOTS.reduce((s, k) => s + inp.slotProtein[k].preferred, 0)
   const proteinPreferred = Math.min(proteinMax, Math.max(inp.proteinMinG, slotPrefSum))
   if (slotMinSum < inp.proteinMinG) {
-    warnings.push(
-      `Slot protein minimums add up to ${slotMinSum} g, below the ${inp.proteinMinG} g floor; the planner aims for ${proteinPreferred} g.`,
-    )
+    warnings.push(`Slot protein minimums add up to ${slotMinSum} g, below the ${inp.proteinMinG} g floor; the planner aims for ${proteinPreferred} g.`)
   }
 
-  const fatG = Math.round((energy * inp.fatPctEnergy) / 100 / KCAL_PER_G.fat)
-  const satFatMaxG = Math.round((energy * inp.satFatPctEnergy) / 100 / KCAL_PER_G.fat)
+  const satFatMaxG = inp.satFatLimitEnabled ? Math.round((energy * inp.satFatPctEnergy) / 100 / KCAL_PER_G.fat) : null
   const addedSugarMaxG = Math.round((energy * inp.addedSugarPctEnergy) / 100 / KCAL_PER_G.carbs)
-  const baseCarbs = (energy - proteinPreferred * KCAL_PER_G.protein - fatG * KCAL_PER_G.fat) / KCAL_PER_G.carbs
-  if (baseCarbs < 50) warnings.push('Carbohydrate is very low at this energy target; check protein and fat settings.')
 
-  if (inp.breakfast.satFatG >= satFatMaxG / 2) {
-    warnings.push(
-      `The fixed breakfast has ${r1(inp.breakfast.satFatG)} g saturated fat, half or more of the ${satFatMaxG} g daily limit; later meals lean on unsaturated fats.`,
-    )
-  }
+  // Base carbohydrate and fat for an average day.
+  const percentFatG = Math.round((energy * inp.fatPctEnergy) / 100 / KCAL_PER_G.fat)
+  const baseCarbs =
+    inp.carbMode === 'fixed'
+      ? inp.carbsPerDayG
+      : (energy - proteinPreferred * KCAL_PER_G.protein - percentFatG * KCAL_PER_G.fat) / KCAL_PER_G.carbs
 
-  if (inp.breakfast.fatG > fatG * 0.5) {
-    const leftFat = Math.max(0, fatG - inp.breakfast.fatG)
-    warnings.push(
-      `The fixed breakfast has ${Math.round(inp.breakfast.fatG)} g of the ${fatG} g daily fat but only ${Math.round(inp.breakfast.carbsG)} g carbohydrate, so the other three meals share just ${Math.round(leftFat)} g fat and about ${Math.round(baseCarbs - inp.breakfast.carbsG)} g carbohydrate. Dinner cannot be truly low-carb at this energy level unless fat % or protein rises, or breakfast changes.`,
-    )
-  }
-
-  // Carbs move from rest days to training days; the weekly total stays the same.
-  const trainingDays = new Set(inp.schedule.map((s) => s.weekday))
-  const nTrain = trainingDays.size
+  // Optionally move carbs from rest days to training days; the weekly total stays the same.
+  const nTrain = Math.min(7, Math.max(0, inp.trainingDaysPerWeek))
   const nRest = 7 - nTrain
   const r = inp.restDayCarbReductionPct / 100
-  const restCarbs = nTrain > 0 && nRest > 0 ? baseCarbs * (1 - r) : baseCarbs
-  const trainCarbs = nTrain > 0 && nRest > 0 ? baseCarbs * (1 + (r * nRest) / nTrain) : baseCarbs
+  const carbsFor: Record<DayType, number> = {
+    rest: Math.round(nTrain > 0 && nRest > 0 ? baseCarbs * (1 - r) : baseCarbs),
+    training: Math.round(nTrain > 0 && nRest > 0 ? baseCarbs * (1 + (r * nRest) / nTrain) : baseCarbs),
+  }
 
   const shareSum = inp.slotCarbShare.smoko + inp.slotCarbShare.lunch + inp.slotCarbShare.dinner
-  const days: DayTargets[] = []
-  for (let i = 0; i < 7; i++) {
-    const date = addDays(inp.weekStart, i)
-    const session = inp.schedule.find((s) => s.weekday === i)
-    const carbsG = Math.round(session ? trainCarbs : restCarbs)
-    const energyKcal = Math.round(proteinPreferred * 4 + fatG * 9 + carbsG * 4)
-    const carbsAfterBreakfast = Math.max(0, carbsG - inp.breakfast.carbsG)
+  const fatShareSum = inp.slotFatShare.smoko + inp.slotFatShare.lunch + inp.slotFatShare.dinner
+
+  const template = (dayType: DayType): DayTemplate => {
+    const carbsG = carbsFor[dayType]
+    // fixed mode: energy is the same every day and fat takes whatever carbs and protein leave.
+    // percent mode: fat is fixed and energy follows the carbs.
+    const fatG =
+      inp.carbMode === 'fixed'
+        ? Math.round((energy - proteinPreferred * KCAL_PER_G.protein - carbsG * KCAL_PER_G.carbs) / KCAL_PER_G.fat)
+        : percentFatG
+    const energyKcal = inp.carbMode === 'fixed' ? energy : Math.round(proteinPreferred * 4 + fatG * 9 + carbsG * 4)
+    const carbsLeft = Math.max(0, carbsG - inp.breakfast.carbsG)
+    const fatLeft = Math.max(0, fatG - inp.breakfast.fatG)
 
     const slots = {} as Record<SlotName, SlotTargets>
     for (const slot of SLOTS) {
-      const p = inp.slotProtein[slot]
       if (slot === 'breakfast') {
         const bp = Math.round(inp.breakfast.proteinG)
         const bc = Math.round(inp.breakfast.carbsG)
+        const bf = Math.round(inp.breakfast.fatG)
         slots.breakfast = {
           time: inp.mealTimes.breakfast,
           proteinG: [bp, bp],
           carbLevel: 'low',
           carbsG: [bc, bc],
+          fatG: [bf, bf],
           fixedRecipeId: inp.fixedBreakfastRecipeId,
         }
         continue
       }
-      const mid = (carbsAfterBreakfast * inp.slotCarbShare[slot]) / shareSum
+      const p = inp.slotProtein[slot]
       slots[slot] = {
         time: inp.mealTimes[slot],
         proteinG: [p.min, p.max],
         carbLevel: slot === 'smoko' ? 'low-moderate' : slot === 'lunch' ? 'highest' : 'lowest',
-        carbsG: [Math.round(mid * 0.85), Math.round(mid * 1.15)],
+        carbsG: range((carbsLeft * inp.slotCarbShare[slot]) / shareSum, 0.15),
+        fatG: range((fatLeft * inp.slotFatShare[slot]) / fatShareSum, 0.2),
       }
     }
-    if (session) {
-      const gap = toMin(session.start) - toMin(inp.mealTimes.smoko)
-      if (gap >= 0 && gap <= 120) slots.smoko.digestibility = 'high'
-    }
-
-    days.push({
-      date,
-      dayType: session ? 'training' : 'rest',
-      workout: session
-        ? { start: session.start, durationMin: session.durationMin, type: session.type, intensity: session.intensity }
-        : undefined,
+    return {
       energyKcal,
       proteinG: { min: inp.proteinMinG, preferred: proteinPreferred },
       carbsG,
+      carbsMinG: inp.carbMode === 'fixed' ? carbsG : null,
       fatG,
       satFatMaxG,
       fibreMinG: inp.fibreMinG,
       addedSugarMaxG,
       slots,
-    })
+    }
   }
 
+  const templates = { training: template('training'), rest: template('rest') }
+
+  if (templates.rest.fatG < 0 || templates.training.fatG < 0) warnings.push('Protein and carbohydrate alone exceed the energy target; lower one of them.')
+  if (baseCarbs < 50) warnings.push('Carbohydrate is very low at this energy target; check protein and fat settings.')
+  if (inp.carbMode === 'percent' && inp.breakfast.fatG > percentFatG * 0.5) {
+    warnings.push(
+      `The fixed breakfast has ${Math.round(inp.breakfast.fatG)} g of the ${percentFatG} g daily fat but only ${Math.round(inp.breakfast.carbsG)} g carbohydrate, so the other three meals share just ${Math.round(Math.max(0, percentFatG - inp.breakfast.fatG))} g fat and about ${Math.round(baseCarbs - inp.breakfast.carbsG)} g carbohydrate.`,
+    )
+  }
+  if (satFatMaxG !== null && inp.breakfast.satFatG >= satFatMaxG / 2) {
+    warnings.push(
+      `The fixed breakfast has ${Math.round(inp.breakfast.satFatG * 10) / 10} g saturated fat, half or more of the ${satFatMaxG} g daily limit.`,
+    )
+  }
+
+  const draft: TargetSet = { contractVersion: CONTRACT_VERSION, version: 0, goal: inp.goal, templates, days: [] }
+  draft.days = inp.week.map((d, i) => resolveDay(draft, addDays(inp.weekStart, i), d.dayType, d.workout))
+
   return {
-    targetSet: { contractVersion: CONTRACT_VERSION, version: 0, goal: inp.goal, days },
+    targetSet: draft,
     ageYears,
     bmrKcal: bmr,
     maintenanceKcal: maintenance,

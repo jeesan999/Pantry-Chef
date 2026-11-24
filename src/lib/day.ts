@@ -1,4 +1,5 @@
-import type { DayTargets, SlotName, TargetSet } from '../engines/contract'
+import { resolveDay, type DayTargets, type SlotName, type TargetSet } from '../engines/contract'
+import type { DayChoice } from './schedule'
 import type { SlotTag } from '../db/types'
 import { newId, nowIso, type Repo } from '../db/repo'
 import { addDays, mondayOf } from '../engines/nutrition/engine'
@@ -13,10 +14,9 @@ export const SLOT_TAGS: Record<SlotName, SlotTag[]> = {
   dinner: ['dinner', 'low-carb-dinner'],
 }
 
-/** Targets for a date. An approved set covers one week; other weeks reuse the same weekday pattern. */
-export function dayTargetsFor(ts: TargetSet, date: string): DayTargets {
-  const idx = (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7
-  return { ...ts.days[idx], date }
+/** Targets for a date, using the training/rest choice for that date. */
+export function targetsForDate(ts: TargetSet, choice: DayChoice): DayTargets {
+  return resolveDay(ts, choice.date, choice.dayType, choice.workout)
 }
 
 export const weekDates = (date: string) => Array.from({ length: 7 }, (_, i) => addDays(mondayOf(date), i))

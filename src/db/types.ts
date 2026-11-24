@@ -43,13 +43,19 @@ export interface Settings {
   activityFactor: number // 1.375 | 1.55 | 1.725 or custom
   proteinMinG: number
   proteinMaxGPerKg: number
-  fatPctEnergy: number
+  carbMode: 'fixed' | 'percent' // fixed: set grams of carbs, fat fills the rest
+  carbsPerDayG: number
+  fatPctEnergy: number // percent mode only
+  satFatLimitEnabled: boolean
   satFatPctEnergy: number
   fibreMinG: number
   addedSugarPctEnergy: number
   restDayCarbReductionPct: number
+  trainingDaysPerWeek: number // nominal, balances any rest-day carb shift
+  defaultWorkout: { start: string; durationMin: number; type: WorkoutType }
   slotProtein: Record<SlotName, { min: number; preferred: number; max: number }>
   slotCarbShare: { smoko: number; lunch: number; dinner: number } // of carbs left after breakfast
+  slotFatShare: { smoko: number; lunch: number; dinner: number } // of fat left after breakfast
   breakfast: { eggs: number; avocadoHalves: number; baconRashers: number; gheeG: number }
   fixedBreakfastRecipeId?: Id
   weeklyBudgetCents?: Cents

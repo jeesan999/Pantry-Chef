@@ -1,15 +1,20 @@
 import { useLiveQuery } from 'dexie-react-hooks'
-import { db } from '../db/instance'
+import { db, repo } from '../db/instance'
+import { CONTRACT_VERSION } from '../engines/contract'
+import { dayChoices } from './schedule'
 import { PROFILE_ID, SETTINGS_ID } from '../db/seed'
 import type { Food, Recipe } from '../db/types'
 import { recipeNutrition, type RecipeNutrition } from './nutrition'
 
 export const useProfile = () => useLiveQuery(() => db.profile.get(PROFILE_ID))
 export const useSettings = () => useLiveQuery(() => db.settings.get(SETTINGS_ID))
+// Records made under an older contract version are ignored, so a fresh proposal is asked for.
+const current = <T extends { targetSet: { contractVersion: number } }>(r?: T) => (r && r.targetSet.contractVersion === CONTRACT_VERSION ? r : null)
 export const useApprovedTargets = () =>
-  useLiveQuery(async () => (await db.nutrition_targets.where('status').equals('approved').toArray())[0] ?? null)
+  useLiveQuery(async () => current((await db.nutrition_targets.where('status').equals('approved').toArray())[0]))
 export const useProposedTargets = () =>
-  useLiveQuery(async () => (await db.nutrition_targets.where('status').equals('proposed').toArray())[0] ?? null)
+  useLiveQuery(async () => current((await db.nutrition_targets.where('status').equals('proposed').toArray())[0]))
+export const useDayChoices = (dates: string[]) => useLiveQuery(() => dayChoices(repo, dates), [dates.join()])
 
 /** Per-serving nutrition for every recipe, recalculated whenever foods or ingredients change. */
 export function useAllRecipeNutrition(): Map<string, RecipeNutrition> | undefined {

@@ -26,32 +26,47 @@ describe('starter recipe library', () => {
     for (const r of STARTER_RECIPES) expect(calc(r).missing, r.key).toEqual([])
   })
 
-  // Per serving at 1x. The planner scales portions 0.5–2.5x to hit protein, so the checks
-  // are on shape: protein in a sensible band, and carbs/fat suited to the slot.
-  it('smoko: 22–42 g protein, carbs ≥ 35 g, fat ≤ 20 g', () => {
+  it('no vegetable or seed oils: cooking fat is ghee or coconut oil only', () => {
+    const banned = ['olive_oil', 'sesame_oil', 'coconut_milk_light']
+    for (const r of STARTER_RECIPES) {
+      for (const [food] of r.ingredients) expect(banned, `${r.key} uses ${food}`).not.toContain(food)
+      expect(r.method.join(' '), r.key).not.toMatch(/olive oil|sesame oil|vegetable oil|canola|sunflower/i)
+    }
+  })
+
+  // Portions are scaled to each meal's protein target, so what matters is carbs and fat
+  // relative to protein. Agreed pattern: ~150 g carbs/day over 3 meals, fat fills the rest.
+  const ratios = (r: (typeof STARTER_RECIPES)[number]) => {
+    const n = calc(r).perServing
+    return { c: n.carbsG / n.proteinG, f: n.fatG / n.proteinG, p: n.proteinG }
+  }
+  it('smoko: 25–45 g protein; carbs 1.1–1.7x protein; fat at least 0.75x protein', () => {
     for (const r of STARTER_RECIPES.filter((r) => r.slotTags.includes('smoko'))) {
-      const n = calc(r).perServing
-      expect(n.proteinG, r.key).toBeGreaterThanOrEqual(22)
-      expect(n.proteinG, r.key).toBeLessThanOrEqual(42)
-      expect(n.carbsG, r.key).toBeGreaterThanOrEqual(35)
-      expect(n.fatG, r.key).toBeLessThanOrEqual(20)
+      const x = ratios(r)
+      expect(x.p, r.key).toBeGreaterThanOrEqual(25)
+      expect(x.p, r.key).toBeLessThanOrEqual(45)
+      expect(x.c, r.key).toBeGreaterThanOrEqual(1.1)
+      expect(x.c, r.key).toBeLessThanOrEqual(1.7)
+      expect(x.f, r.key).toBeGreaterThanOrEqual(0.75)
     }
   })
-  it('post-workout lunch: 35–62 g protein, carbs ≥ 85 g', () => {
+  it('post-workout lunch: 35–62 g protein; carbs 1.8–2.7x protein (the day\'s biggest); fat at least 0.55x', () => {
     for (const r of STARTER_RECIPES.filter((r) => r.slotTags.includes('post-workout'))) {
-      const n = calc(r).perServing
-      expect(n.proteinG, r.key).toBeGreaterThanOrEqual(35)
-      expect(n.proteinG, r.key).toBeLessThanOrEqual(62)
-      expect(n.carbsG, r.key).toBeGreaterThanOrEqual(85)
+      const x = ratios(r)
+      expect(x.p, r.key).toBeGreaterThanOrEqual(35)
+      expect(x.p, r.key).toBeLessThanOrEqual(62)
+      expect(x.c, r.key).toBeGreaterThanOrEqual(1.8)
+      expect(x.c, r.key).toBeLessThanOrEqual(2.7)
+      expect(x.f, r.key).toBeGreaterThanOrEqual(0.55)
     }
   })
-  it('low-carb dinner: 32–60 g protein, carbs ≤ 45 g, sat fat ≤ 8 g', () => {
+  it('low-carb dinner: 32–60 g protein; carbs at most 0.8x protein; fat at least 0.75x', () => {
     for (const r of STARTER_RECIPES.filter((r) => r.slotTags.includes('low-carb-dinner'))) {
-      const n = calc(r).perServing
-      expect(n.proteinG, r.key).toBeGreaterThanOrEqual(32)
-      expect(n.proteinG, r.key).toBeLessThanOrEqual(60)
-      expect(n.carbsG, r.key).toBeLessThanOrEqual(45)
-      expect(n.satFatG, r.key).toBeLessThanOrEqual(8)
+      const x = ratios(r)
+      expect(x.p, r.key).toBeGreaterThanOrEqual(32)
+      expect(x.p, r.key).toBeLessThanOrEqual(60)
+      expect(x.c, r.key).toBeLessThanOrEqual(0.8)
+      expect(x.f, r.key).toBeGreaterThanOrEqual(0.75)
     }
   })
 })

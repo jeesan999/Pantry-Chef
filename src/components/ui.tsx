@@ -139,7 +139,7 @@ export function Ring({ value, target, label, unit, color = '#2e7445', size = 76,
 /** Horizontal bar for a value inside a [low, high] range. */
 export function RangeBar({ value, low, high, unit }: { value: number; low: number; high: number; unit: string }) {
   const top = Math.max(high * 1.3, value * 1.05, 1)
-  const inRange = value >= low && value <= high
+  const inRange = value >= low - 0.5 && value <= high + 0.5 // values are shown rounded
   return (
     <div className="flex items-center gap-2 text-xs">
       <div className="relative h-2 flex-1 rounded-full bg-stone-100">

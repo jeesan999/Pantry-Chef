@@ -7,8 +7,9 @@ import { db, repo, today } from '../db/instance'
 import { FIXED_BREAKFAST_ID } from '../db/seed'
 import type { PlannedMeal, Recipe } from '../db/types'
 import { SLOTS, type SlotName } from '../engines/contract'
-import { SLOT_LABEL, SLOT_TAGS, assignMeal, clearMeal, dayTargetsFor } from '../lib/day'
-import { useAllRecipeNutrition, useApprovedTargets, useProfile } from '../lib/hooks'
+import { SLOT_LABEL, SLOT_TAGS, assignMeal, clearMeal, targetsForDate } from '../lib/day'
+import { DayTypeSwitch } from '../components/DayTypeSwitch'
+import { useAllRecipeNutrition, useApprovedTargets, useDayChoices, useProfile } from '../lib/hooks'
 import { addNutrients, emptyNutrients, portionForProtein, scaleNutrients } from '../lib/nutrition'
 
 export default function TodayScreen() {
@@ -20,7 +21,8 @@ export default function TodayScreen() {
   const planned = useLiveQuery(() => db.planned_meals.where('date').equals(date).toArray(), [date])
   const [picking, setPicking] = useState<SlotName | null>(null)
 
-  const day = approved ? dayTargetsFor(approved.targetSet, date) : null
+  const choice = useDayChoices([date])?.[0]
+  const day = approved && choice ? targetsForDate(approved.targetSet, choice) : null
   const recipeById = useMemo(() => new Map((recipes ?? []).map((r) => [r.id, r])), [recipes])
   const plannedBySlot = useMemo(() => new Map((planned ?? []).map((p) => [p.slot, p])), [planned])
 
@@ -48,7 +50,7 @@ export default function TodayScreen() {
       subtitle={
         <span className="flex items-center gap-2">
           {fmt.date(date)}
-          {day && <Badge tone={day.dayType === 'training' ? 'ember' : 'leaf'}>{day.dayType === 'training' ? `Training ${day.workout?.start}` : 'Rest day'}</Badge>}
+          {choice && <DayTypeSwitch choice={choice} />}
         </span>
       }
     >
@@ -72,6 +74,7 @@ export default function TodayScreen() {
               <Ring value={totals.fatG} target={day.fatG} label="Fat" unit="g" color="#7c3aed" />
             </div>
             <div className="mt-4 space-y-2 text-sm">
+              {day.carbsMinG !== null && <Limit label="Carbs (daily minimum)" value={totals.carbsG} limit={day.carbsMinG} />}
               <Limit label="Saturated fat" value={totals.satFatG} limit={day.satFatMaxG} max />
               <Limit label="Fibre" value={totals.fibreG} limit={day.fibreMinG} />
               <Limit label="Added sugar" value={totals.addedSugarG} limit={day.addedSugarMaxG} max />
@@ -117,6 +120,7 @@ export default function TodayScreen() {
                 <div className="space-y-1.5 border-t border-stone-100 bg-stone-50/60 px-4 py-3">
                   <Row label="Protein"><RangeBar value={per?.proteinG ?? 0} low={st.proteinG[0]} high={st.proteinG[1]} unit="g" /></Row>
                   <Row label="Carbs"><RangeBar value={per?.carbsG ?? 0} low={st.carbsG[0]} high={st.carbsG[1]} unit="g" /></Row>
+                  <Row label="Fat"><RangeBar value={per?.fatG ?? 0} low={st.fatG[0]} high={st.fatG[1]} unit="g" /></Row>
                 </div>
               </Card>
             )
@@ -154,7 +158,15 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function Limit({ label, value, limit, max }: { label: string; value: number; limit: number; max?: boolean }) {
+function Limit({ label, value, limit, max }: { label: string; value: number; limit: number | null; max?: boolean }) {
+  if (limit === null) {
+    return (
+      <div className="flex items-center justify-between">
+        <span className="text-stone-600">{label}</span>
+        <span className="tabular text-stone-700">{fmt.g(value)} <span className="text-stone-400">no limit set</span></span>
+      </div>
+    )
+  }
   const ok = max ? value <= limit : value >= limit
   return (
     <div className="flex items-center justify-between">

@@ -87,7 +87,8 @@ function TrainingCard() {
     })
   const patch = (r: TrainingScheduleEntry, p: Partial<TrainingScheduleEntry>) => save(() => repo.update('training_schedule', r.id, p))
   return (
-    <Card title="Training week">
+    <Card title="Usual week">
+      <p className="mb-2 text-sm text-stone-600">Only a starting point. Switch any day between training and rest on the Plan or Today screen.</p>
       {msg}
       <ul className="divide-y divide-stone-100">
         {WEEKDAYS.map((d, i) => {
@@ -112,7 +113,7 @@ function TrainingCard() {
           )
         })}
       </ul>
-      <p className="mt-2 text-xs text-stone-500">Start time, minutes, type. Training between smoko and lunch makes smoko lighter and lunch the post-workout meal.</p>
+      <p className="mt-2 text-xs text-stone-500">Start time, minutes, type. Training within 2 hours after smoko makes smoko easy to digest; lunch becomes the post-workout meal.</p>
     </Card>
   )
 }
@@ -131,15 +132,29 @@ function NutritionCard({ settings }: { settings: Settings }) {
             {ACTIVITY_LEVELS.map((a) => <option key={a.factor} value={a.factor}>{a.label} ({a.factor}): {a.detail}</option>)}
           </Select>
         </Field>
+        <Field label="How carbohydrate is set">
+          <Select value={s.carbMode} onChange={(e) => setS({ ...s, carbMode: e.target.value as Settings['carbMode'] })}>
+            <option value="fixed">Fixed grams a day; fat fills the rest of the energy</option>
+            <option value="percent">Fat as % of energy; carbohydrate fills the rest</option>
+          </Select>
+        </Field>
         <div className="grid grid-cols-2 gap-2">
+          {s.carbMode === 'fixed' ? (
+            <Field label="Carbs per day (g)" hint="Split across smoko, lunch, dinner"><Input inputMode="numeric" value={s.carbsPerDayG} onChange={num('carbsPerDayG')} /></Field>
+          ) : (
+            <Field label="Fat (% energy)"><Input inputMode="numeric" value={s.fatPctEnergy} onChange={num('fatPctEnergy')} /></Field>
+          )}
+          <Field label="Rest-day carb cut (%)" hint="Moved to training days; 0 = same every day"><Input inputMode="numeric" value={s.restDayCarbReductionPct} onChange={num('restDayCarbReductionPct')} /></Field>
           <Field label="Protein floor (g/day)"><Input inputMode="numeric" value={s.proteinMinG} onChange={num('proteinMinG')} /></Field>
           <Field label="Protein ceiling (g/kg)"><Input inputMode="decimal" value={s.proteinMaxGPerKg} onChange={num('proteinMaxGPerKg')} /></Field>
-          <Field label="Fat (% energy)"><Input inputMode="numeric" value={s.fatPctEnergy} onChange={num('fatPctEnergy')} /></Field>
-          <Field label="Sat fat max (% energy)"><Input inputMode="numeric" value={s.satFatPctEnergy} onChange={num('satFatPctEnergy')} /></Field>
           <Field label="Fibre min (g)"><Input inputMode="numeric" value={s.fibreMinG} onChange={num('fibreMinG')} /></Field>
           <Field label="Added sugar flag (% energy)"><Input inputMode="numeric" value={s.addedSugarPctEnergy} onChange={num('addedSugarPctEnergy')} /></Field>
-          <Field label="Rest-day carb cut (%)" hint="Moved to training days"><Input inputMode="numeric" value={s.restDayCarbReductionPct} onChange={num('restDayCarbReductionPct')} /></Field>
         </div>
+        <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-stone-700">
+          <span>Saturated fat limit <span className="block text-xs text-stone-500">Off: tracked and shown, never a target</span></span>
+          <input type="checkbox" className="h-5 w-5 accent-leaf-700" checked={s.satFatLimitEnabled} onChange={(e) => setS({ ...s, satFatLimitEnabled: e.target.checked })} />
+        </label>
+        {s.satFatLimitEnabled && <Field label="Sat fat max (% energy)"><Input inputMode="numeric" value={s.satFatPctEnergy} onChange={num('satFatPctEnergy')} /></Field>}
         <p className="text-sm font-medium text-stone-700">Protein per meal (min / preferred / max g)</p>
         {SLOTS.filter((x) => x !== 'breakfast').map((slot) => (
           <div key={slot} className="grid grid-cols-[5rem_1fr_1fr_1fr] items-center gap-2">

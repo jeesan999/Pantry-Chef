@@ -23,7 +23,8 @@ test('first run proposes 2,690 kcal maintenance; approval makes it v1', async ({
   await page.goto('/#/goals')
   await expect(page.getByText(/2,690 kcal\s*maintenance/)).toBeVisible()
   await expect(page.getByText(/add up to 127 g/)).toBeVisible()
-  await expect(page.getByText('2,838 kcal').first()).toBeVisible()
+  await expect(page.getByText('2,690 kcal').first()).toBeVisible() // every day, training or rest
+  await expect(page.getByText('no limit').first()).toBeVisible() // saturated fat: tracked, not limited
   await page.getByRole('button', { name: 'Approve' }).click()
   await expect(page.getByText('v1', { exact: true })).toBeVisible()
   await expect(page.getByText('awaiting approval')).toHaveCount(0)
@@ -86,6 +87,42 @@ test('Pantry: add, use, undo; ledger history is kept', async ({ page }) => {
   await page.getByRole('button', { name: 'Undo' }).first().click()
   await expect(page.getByText(/1000 g left/)).toBeVisible()
   await expect(page.getByText(/Undone \+300 g/)).toBeVisible()
+})
+
+test('Plan: any day can be switched between training and rest, without re-approval', async ({ page }) => {
+  await approveTargets(page)
+  await page.goto('/#/plan')
+  const sub = page.locator('header p')
+  const count = async () => Number((await sub.textContent())!.match(/(\d) training/)![1])
+  const groups = page.getByRole('group', { name: 'Day type' })
+  await expect(groups).toHaveCount(7)
+  const before = await count()
+  // find a rest day and make it a training day
+  let idx = -1
+  for (let i = 0; i < 7; i++) if ((await groups.nth(i).getByRole('button', { name: 'Rest' }).getAttribute('aria-pressed')) === 'true') { idx = i; break }
+  expect(idx).toBeGreaterThanOrEqual(0)
+  await groups.nth(idx).getByRole('button', { name: 'Training' }).click()
+  await expect.poll(count).toBe(before + 1)
+  // and a training day back to rest
+  await groups.nth(idx).getByRole('button', { name: 'Rest' }).click()
+  await expect.poll(count).toBe(before)
+  await page.getByRole('button', { name: 'Next week' }).click()
+  await expect(page.locator('h1')).toHaveText('Next week')
+  await page.goto('/#/goals')
+  await expect(page.getByText('v1', { exact: true })).toBeVisible()
+  await expect(page.getByText('awaiting approval')).toHaveCount(0)
+})
+
+test('Today: switch today to rest and back', async ({ page }) => {
+  await approveTargets(page)
+  await page.goto('/#/')
+  const group = page.getByRole('group', { name: 'Day type' })
+  await group.getByRole('button', { name: 'Rest' }).click()
+  await expect(group.getByRole('button', { name: 'Rest' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByText(/easy to digest/)).toHaveCount(0)
+  await group.getByRole('button', { name: /^Training/ }).click()
+  await expect(group.getByRole('button', { name: /^Training/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByText('Carbs (daily minimum)')).toBeVisible()
 })
 
 test('all 11 screens open from the navigation', async ({ page }) => {

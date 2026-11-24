@@ -8,7 +8,8 @@ import { IntegrityError, newId, nowIso, type Repo } from '../../db/repo'
 import type { NutritionTargetRecord } from '../../db/types'
 import { emit } from '../../lib/events'
 import { recipeNutrition } from '../../lib/nutrition'
-import { computeTargets, mondayOf, type EngineResult, type NutritionInputs } from './engine'
+import { addDays, computeTargets, mondayOf, type EngineResult, type NutritionInputs } from './engine'
+import { dayChoices } from '../../lib/schedule'
 
 export async function currentWeightKg(repo: Repo): Promise<{ kg: number; fromWeighIn: boolean }> {
   const latest = await repo.db.weight_measurements.orderBy('date').last()
@@ -33,13 +34,14 @@ export async function activeGoal(repo: Repo) {
   return open[0]
 }
 
-export async function buildInputs(repo: Repo, weekStart: string): Promise<NutritionInputs> {
+export async function buildInputs(repo: Repo, date: string): Promise<NutritionInputs> {
   const profile = (await repo.get('profile', PROFILE_ID))!
   const settings = (await repo.get('settings', SETTINGS_ID))!
   const goal = await activeGoal(repo)
   const { kg } = await currentWeightKg(repo)
   const bf = (await fixedBreakfastNutrition(repo)).total
-  const schedule = (await repo.db.training_schedule.toArray()).filter((s) => s.active)
+  const weekStart = mondayOf(date)
+  const week = await dayChoices(repo, Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)))
   return {
     sex: profile.sex,
     birthDate: profile.birthDate,
@@ -50,18 +52,23 @@ export async function buildInputs(repo: Repo, weekStart: string): Promise<Nutrit
     goalAdjustPct: goal.energyAdjustPct,
     proteinMinG: settings.proteinMinG,
     proteinMaxGPerKg: settings.proteinMaxGPerKg,
+    carbMode: settings.carbMode,
+    carbsPerDayG: settings.carbsPerDayG,
     fatPctEnergy: settings.fatPctEnergy,
+    satFatLimitEnabled: settings.satFatLimitEnabled,
     satFatPctEnergy: settings.satFatPctEnergy,
     fibreMinG: settings.fibreMinG,
     addedSugarPctEnergy: settings.addedSugarPctEnergy,
     restDayCarbReductionPct: settings.restDayCarbReductionPct,
+    trainingDaysPerWeek: settings.trainingDaysPerWeek,
     slotProtein: settings.slotProtein,
     slotCarbShare: settings.slotCarbShare,
+    slotFatShare: settings.slotFatShare,
     mealTimes: profile.mealTimes,
-    schedule: schedule.map((s) => ({ weekday: s.weekday, type: s.type, start: s.start, durationMin: s.durationMin, intensity: s.intensity })),
+    week: week.map((d) => ({ dayType: d.dayType, workout: d.workout })),
     breakfast: { energyKcal: bf.energyKcal, proteinG: bf.proteinG, carbsG: bf.carbsG, fatG: bf.fatG, satFatG: bf.satFatG },
     fixedBreakfastRecipeId: FIXED_BREAKFAST_ID,
-    weekStart: mondayOf(weekStart),
+    weekStart,
   }
 }
 
