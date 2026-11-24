@@ -1,0 +1,74 @@
+import { useLiveQuery } from 'dexie-react-hooks'
+import Fuse from 'fuse.js'
+import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { RecipeArt } from '../components/RecipeArt'
+import { Badge, Button, Input, Page, Select, cx } from '../components/ui'
+import { db } from '../db/instance'
+import type { SlotTag } from '../db/types'
+import { useAllRecipeNutrition } from '../lib/hooks'
+
+export const TAG_LABEL: Record<SlotTag, string> = {
+  breakfast: 'Breakfast',
+  smoko: 'Smoko',
+  'pre-workout': 'Pre-workout',
+  'post-workout': 'Post-workout lunch',
+  lunch: 'Lunch',
+  'low-carb-dinner': 'Low-carb dinner',
+  dinner: 'Dinner',
+}
+
+export default function RecipesScreen() {
+  const recipes = useLiveQuery(() => db.recipes.orderBy('name').toArray())
+  const nutrition = useAllRecipeNutrition()
+  const [q, setQ] = useState('')
+  const [cuisine, setCuisine] = useState('')
+  const [tag, setTag] = useState<SlotTag | ''>('')
+
+  const cuisines = useMemo(() => [...new Set((recipes ?? []).map((r) => r.cuisine))].sort(), [recipes])
+  const fuse = useMemo(() => new Fuse(recipes ?? [], { keys: ['name', 'cuisine'], threshold: 0.35 }), [recipes])
+  const list = (q ? fuse.search(q).map((x) => x.item) : recipes ?? [])
+    .filter((r) => !cuisine || r.cuisine === cuisine)
+    .filter((r) => !tag || r.slotTags.includes(tag))
+
+  return (
+    <Page title="Recipes" subtitle={recipes ? `${recipes.length} recipes` : ' '} action={<Link to="/recipes/new"><Button>Add</Button></Link>}>
+      <div className="space-y-2">
+        <Input placeholder="Search recipes" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search recipes" />
+        <div className="grid grid-cols-2 gap-2">
+          <Select value={cuisine} onChange={(e) => setCuisine(e.target.value)} aria-label="Cuisine">
+            <option value="">All cuisines</option>
+            {cuisines.map((c) => <option key={c}>{c}</option>)}
+          </Select>
+          <Select value={tag} onChange={(e) => setTag(e.target.value as SlotTag | '')} aria-label="Meal">
+            <option value="">All meals</option>
+            {(Object.keys(TAG_LABEL) as SlotTag[]).map((t) => <option key={t} value={t}>{TAG_LABEL[t]}</option>)}
+          </Select>
+        </div>
+      </div>
+      <ul className="grid grid-cols-2 gap-3">
+        {list.map((r) => {
+          const n = nutrition?.get(r.id)?.perServing
+          return (
+            <li key={r.id}>
+              <Link to={`/recipes/${r.id}`} className="block overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
+                <RecipeArt recipe={r} className="aspect-[4/3] w-full" />
+                <div className="p-2.5">
+                  <p className="line-clamp-2 min-h-10 text-sm font-medium leading-5 text-stone-800">{r.name}</p>
+                  <p className="tabular mt-1 text-xs text-stone-500">
+                    {n ? `${Math.round(n.proteinG)} g protein · ${Math.round(n.energyKcal)} kcal` : '…'}
+                  </p>
+                  <div className={cx('mt-1.5 flex flex-wrap gap-1')}>
+                    {r.fixedSlot && <Badge>fixed</Badge>}
+                    <Badge tone="leaf">{r.cuisine}</Badge>
+                  </div>
+                </div>
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
+      {list.length === 0 && <p className="text-center text-sm text-stone-500">No recipes match.</p>}
+    </Page>
+  )
+}

@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@theme {
+  --color-leaf-50: #f0f7f1;
+  --color-leaf-100: #dcefe0;
+  --color-leaf-200: #b9dec2;
+  --color-leaf-500: #3f8f57;
+  --color-leaf-600: #2e7445;
+  --color-leaf-700: #245c38;
+  --color-leaf-900: #14321f;
+  --color-ember-400: #f0a35a;
+  --color-ember-500: #e07f2a;
+  --color-ember-600: #b8611a;
+  --color-ink: #1c1917;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-stone-50 text-ink antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+input,
+select,
+textarea {
+  font-size: 16px; /* prevents zoom on focus in mobile browsers */
+}
