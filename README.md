@@ -76,9 +76,13 @@ used and adapted under its licence (attribution required; derived data shared un
 
 ## Deploy to GitHub Pages
 
-```bash
-BASE_PATH=/<repo-name>/ npm run build
-```
+`.github/workflows/pages.yml` runs the unit tests, builds the app for `/<repo>/` and publishes it on every push to
+`main` (or run it by hand from the Actions tab). One-time setup: in the repository, **Settings → Pages → Build and
+deployment → Source: GitHub Actions**. The site is then at `https://<owner>.github.io/<repo>/`; open it in Chrome on the
+phone and choose **Install app**. After the first load it works fully offline, and your data stays on the phone.
 
-Publish the `dist/` folder to the `gh-pages` branch (or use a Pages workflow). Then open the site in Chrome on
-the phone and choose **Install app**.
+To try a Pages build locally:
+
+```bash
+BASE_PATH=/Pantry-Chef/ npm run build && BASE_PATH=/Pantry-Chef/ npx vite preview
+```
