@@ -4,10 +4,10 @@ An installable, offline-first web app for meal planning, nutrition targets, pant
 All data stays on your device. No accounts, API keys or paid services. Once installed, the app makes
 no network requests (a Content Security Policy blocks them).
 
-## Status: Phase 5 (shopping list)
+## Status: Phase 6 (Chef)
 
 - 11 screens with navigation; Today, Plan, Recipes, Pantry, Goals & Targets, Progress (weigh-ins) and Settings work now;
-  Scan Receipt, Expenses and Shopping List work too; Chef (Phase 6) is a labelled shell.
+  Scan Receipt, Expenses, Shopping List and Chef work too.
 - Expenses: spending by week, month and year, by store, category and food type; weekly and monthly budgets with
   alerts (also on Today); manual expenses; price history; estimated cost per meal and per day; protein per dollar.
   The calculations are pure functions in `src/engines/cost/engine.ts`; meal costs use the latest price paid and are
@@ -16,6 +16,12 @@ no network requests (a Content Security Policy blocks them).
   minus pantry stock that is still in date on the day of each meal, with estimated costs from your own prices.
   Tick items off, add extras; updating the list keeps both. Scanning a receipt ticks what it bought.
   The list builder is a pure function in `src/engines/shopping/engine.ts`. The automatic meal planner is Phase 8.
+- Chef: type commands in your own words, e.g. “swap tonight’s dinner”, “something with salmon for lunch tomorrow”,
+  “make tomorrow a rest day”, “train Saturday at 6am”, “use up what expires soon”, “what can I make with chicken
+  and rice?”, “add milk to the shopping list”, “I threw out the spinach”, “I weigh 80.4 kg”, “what’s for dinner?”,
+  “how much budget is left?”. A rule-based interpreter (`src/engines/chef/`) runs on the phone: no AI service, no
+  network. Nothing changes until you tap “Do it”, and every change can be undone. Marking meals as eaten is a later
+  phase.
 - 30-table IndexedDB database (Dexie) with foreign keys, validation, transactions and an append-only pantry ledger
   enforced in `src/db/repo.ts` and `src/db/pantry.ts`.
 - Engine A (Nutrition) in `src/engines/nutrition/engine.ts`: pure functions, emits the `TargetSet` contract in

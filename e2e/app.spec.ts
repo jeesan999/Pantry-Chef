@@ -254,6 +254,53 @@ test('Shopping list: build from planned meals, tick, add an extra, kept on reloa
   await expect(page.getByRole('checkbox', { name: /^Avocado/ })).toBeChecked()
 })
 
+async function tellChef(page: Page, text: string) {
+  await page.getByLabel('Message Chef').fill(text)
+  await page.getByLabel('Message Chef').press('Enter')
+}
+
+test('Chef: rest day with confirm and undo, swap a meal, add to the shopping list, not understood', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-11-26T10:00:00')) // Thursday; Friday is a usual training day
+  await approveTargets(page)
+  await page.goto('/#/chef')
+  await expect(page.getByRole('button', { name: 'Make tomorrow a rest day' })).toBeVisible() // starter chip
+  await tellChef(page, 'make tomorrow a rest day')
+  await expect(page.getByText('Make tomorrow a rest day?')).toBeVisible()
+  await expect(page.getByText(/Tomorrow: training .* → rest/)).toBeVisible()
+  await page.getByRole('button', { name: 'Do it' }).click()
+  await expect(page.getByText(/Tomorrow is now a rest day/)).toBeVisible()
+  await page.goto('/#/plan')
+  await expect(page.getByText(/3 training, 4 rest/)).toBeVisible()
+  // the conversation and its undo survive switching screens
+  await page.goto('/#/chef')
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(page.getByText(/Tomorrow is back to training/)).toBeVisible()
+  await page.goto('/#/plan')
+  await expect(page.getByText(/4 training, 3 rest/)).toBeVisible()
+
+  await page.goto('/#/chef')
+  await tellChef(page, "swap tonight's dinner")
+  const options = page.getByRole('log').locator(':scope > li').last().getByRole('button')
+  await expect(options).toHaveCount(3)
+  const pick = (await options.nth(1).locator('span').first().textContent())!
+  await options.nth(1).click()
+  await expect(page.getByText(`${pick} is on tonight’s dinner`, { exact: false })).toBeVisible()
+  await page.goto('/#/')
+  await expect(page.getByText(pick, { exact: true })).toBeVisible()
+
+  await page.goto('/#/chef')
+  await tellChef(page, 'add milk to the shopping list')
+  await page.getByRole('button', { name: 'Do it' }).last().click()
+  await expect(page.getByText(/Added .*milk.* to the shopping list/i)).toBeVisible()
+  await page.goto('/#/shopping')
+  await expect(page.getByRole('checkbox', { name: /milk/i })).toBeVisible()
+
+  await page.goto('/#/chef')
+  await tellChef(page, 'chicken')
+  await expect(page.getByText(/didn’t understand/)).toBeVisible()
+  await expect(page.getByRole('log').locator(':scope > li').last().getByRole('button')).toHaveCount(3)
+})
+
 test('Expenses: add by hand, set a budget, get warned on Today, delete', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-11-26T10:00:00'))
   await page.goto('/#/expenses')

@@ -7,10 +7,11 @@ import { db, repo, today } from '../db/instance'
 import { FIXED_BREAKFAST_ID } from '../db/seed'
 import type { PlannedMeal, Recipe } from '../db/types'
 import { SLOTS, type SlotName } from '../engines/contract'
-import { SLOT_LABEL, SLOT_TAGS, assignMeal, clearMeal, targetsForDate } from '../lib/day'
+import { SLOT_LABEL, assignMeal, clearMeal, targetsForDate } from '../lib/day'
 import { DayTypeSwitch } from '../components/DayTypeSwitch'
 import { useAllRecipeNutrition, useApprovedTargets, useDayChoices, usePantrySuggestions, useProfile } from '../lib/hooks'
-import { addNutrients, emptyNutrients, portionForProtein, scaleNutrients } from '../lib/nutrition'
+import { addNutrients, emptyNutrients, scaleNutrients } from '../lib/nutrition'
+import { rankForSlot } from '../lib/rank'
 import { budgetStatuses } from '../lib/expenses'
 import { BudgetAlerts } from './expenses/BudgetAlerts'
 
@@ -129,7 +130,9 @@ export default function TodayScreen() {
               </Card>
             )
           })}
-          <p className="px-1 text-xs text-stone-500">Marking meals as eaten, with pantry deduction and undo, arrives in Phase 5.</p>
+          <p className="px-1 text-xs text-stone-500">
+            Want a change? <Link to="/chef" className="font-medium text-leaf-700 underline">Ask Chef</Link>, e.g. “swap tonight’s dinner”. Marking meals as eaten arrives in a later phase.
+          </p>
         </>
       )}
 
@@ -187,18 +190,8 @@ function PickRecipe({ slot, targetProtein, onPick, onClose, onClear, hasCurrent 
 }) {
   const nutrition = useAllRecipeNutrition()
   const pantry = usePantrySuggestions()
-  const cover = new Map((pantry ?? []).map((p) => [p.recipe.id, p]))
-  const recipes = useLiveQuery(() => db.recipes.where('slotTags').anyOf(SLOT_TAGS[slot]).distinct().toArray(), [slot])
-  const options = (recipes ?? [])
-    .filter((r) => !r.fixedSlot)
-    .map((r) => {
-      const n = nutrition?.get(r.id)
-      const scale = n ? portionForProtein(n.perServing.proteinG, targetProtein) : 1
-      const pc = cover.get(r.id)
-      return { r, n, scale, kcal: n ? n.perServing.energyKcal * scale : 0, protein: n ? n.perServing.proteinG * scale : 0, pantry: pc?.coverage ?? 0, soon: !!pc?.usesSoon.length }
-    })
-    // what you have counts most; then how little the portion needs scaling
-    .sort((a, b) => b.pantry + (b.soon ? 0.25 : 0) - Math.abs(b.scale - 1) - (a.pantry + (a.soon ? 0.25 : 0) - Math.abs(a.scale - 1)))
+  const recipes = useLiveQuery(() => db.recipes.toArray())
+  const options = recipes ? rankForSlot({ slot, recipes, nutrition, pantry, targetProtein }) : []
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()} title={`Choose ${SLOT_LABEL[slot].toLowerCase()}`}>
       <p className="mb-3 text-sm text-stone-500">Portions are scaled to about {Math.round(targetProtein)} g protein. What you have in the pantry first.</p>
