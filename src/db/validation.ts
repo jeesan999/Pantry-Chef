@@ -132,6 +132,17 @@ export const SCHEMAS: Partial<Record<TableName, z.ZodType>> = {
     ticked: z.boolean(),
     source: z.enum(['plan', 'extra']).optional(),
   }).loose(),
+  meal_consumption: z.object({
+    id,
+    plannedMealId: id.optional(),
+    quick: z.object({ label: z.string().min(1), quantity: z.number().positive(), unit: qtyUnit, grams: nonNeg }).loose().optional(),
+    date,
+    time,
+    fractionEaten: z.number().min(0).max(1),
+    nutrition: nutrientsSchema,
+    costCents: nonNeg,
+    undone: z.boolean(),
+  }).loose().refine((c) => !!c.plannedMealId !== !!c.quick || (c.undone && !c.quick), 'a planned meal or a quick food, not both'),
   recipe_ratings: z.object({
     id,
     recipeId: id,

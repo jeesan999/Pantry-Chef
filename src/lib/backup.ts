@@ -15,7 +15,7 @@ export async function exportBackup(): Promise<void> {
       return rest
     })
   }
-  const blob = new Blob([JSON.stringify({ app: 'personal-chef', schema: 1, exportedAt: nowIso(), tables: out })], { type: 'application/json' })
+  const blob = new Blob([JSON.stringify({ app: 'personal-chef', schema: 2, exportedAt: nowIso(), tables: out })], { type: 'application/json' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = `personal-chef-backup-${nowIso().slice(0, 10)}.json`

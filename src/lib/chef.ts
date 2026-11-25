@@ -18,6 +18,7 @@ import { budgetStatuses } from './expenses'
 import { loadProgress } from './progress'
 import { FLAG_LABEL, allRatings, rate, restoreRating } from './ratings'
 import { acceptDraft, buildDraft } from './planner'
+import { eatMeal, eatQuick, eatenFor, ensureBreakfast, loadDay, previewMeal, previewQuick, undoEaten, type QuickChoice } from './eating'
 import { fmtRate, hasRate } from '../engines/progress/engine'
 import { searchItems } from './itemSearch'
 import { addNutrients, emptyNutrients } from './nutrition'
@@ -79,6 +80,11 @@ export async function act(deps: ChefDeps, intent: Intent): Promise<Reply> {
     case 'progress': return progress(deps)
     case 'plan': return planMeals(deps, intent.week, intent.date, intent.replan)
     case 'rate': return rateRecipe(deps, intent)
+    case 'ate': return ateMeal(deps, intent.date, intent.slot, intent.fraction, intent.recipe)
+    case 'skipped': return skipped(deps, intent.date, intent.slot)
+    case 'quick': return quickFood(deps, intent.date, intent.item, intent.qty, intent.unit)
+    case 'undoEaten': return undoLog(deps, intent.date, intent.slot, intent.item)
+    case 'eatenToday': return eatenOn(deps, intent.date)
   }
 }
 
@@ -293,6 +299,20 @@ async function nutritionLeft(deps: ChefDeps, date: string): Promise<Reply> {
     if (n) sum = addNutrients(sum, n.perServing, p.portionScale)
   }
   const d = t.day
+  const log = await loadDay(deps.repo, date)
+  if (log.logged.size + log.quick.length > 0) {
+    const e = log.totals
+    const rowE = (label: string, have: number, want: number, unit: string) => {
+      const gap = Math.round(want - have)
+      return `${label}: ${Math.round(have)} of ${Math.round(want)} ${unit} eaten${gap > 0 ? ` · ${gap} ${unit} to go` : gap < 0 ? ` · ${-gap} ${unit} over` : ''}`
+    }
+    const notLogged = planned.filter((p) => !log.logged.has(p.id)).length + (planned.some((p) => p.slot === 'breakfast') ? 0 : 1)
+    const gap = Math.round(d.proteinG.preferred - e.proteinG)
+    return answer(gap > 0 ? `${gap} g protein to go ${date === deps.today ? 'today' : dayLabel(date, deps.today)} (${Math.round(e.proteinG)} of ${d.proteinG.preferred} g eaten).` : `You’ve reached your protein target (${Math.round(e.proteinG)} g).`, {
+      lines: [rowE('Energy', e.energyKcal, d.energyKcal, 'kcal'), rowE('Protein', e.proteinG, d.proteinG.preferred, 'g'), rowE('Carbs', e.carbsG, d.carbsG, 'g'), rowE('Fat', e.fatG, d.fatG, 'g'), notLogged ? `${notLogged} meal${notLogged === 1 ? '' : 's'} still to log` : 'Every meal logged'],
+      link: { to: '/', label: 'See Today' },
+    })
+  }
   const row = (label: string, have: number, want: number, unit: string) => {
     const gap = Math.round(want - have)
     return `${label}: ${Math.round(have)} of ${Math.round(want)} ${unit} planned${gap > 0 ? ` · ${gap} ${unit} to go` : gap < 0 ? ` · ${-gap} ${unit} over` : ''}`
@@ -301,7 +321,7 @@ async function nutritionLeft(deps: ChefDeps, date: string): Promise<Reply> {
   return answer(
     protGap > 0 ? `${cap(dayLabel(date, deps.today))}’s meals plan ${Math.round(sum.proteinG)} g protein: ${protGap} g short of ${d.proteinG.preferred} g.` : `${cap(dayLabel(date, deps.today))}’s meals cover your protein target.`,
     {
-      lines: [row('Energy', sum.energyKcal, d.energyKcal, 'kcal'), row('Protein', sum.proteinG, d.proteinG.preferred, 'g'), row('Carbs', sum.carbsG, d.carbsG, 'g'), row('Fat', sum.fatG, d.fatG, 'g'), 'Based on the meals planned; marking meals as eaten arrives later.'],
+      lines: [row('Energy', sum.energyKcal, d.energyKcal, 'kcal'), row('Protein', sum.proteinG, d.proteinG.preferred, 'g'), row('Carbs', sum.carbsG, d.carbsG, 'g'), row('Fat', sum.fatG, d.fatG, 'g'), 'Nothing logged yet, so this is what your planned meals add up to.'],
       link: { to: '/', label: 'See Today' },
     },
   )
@@ -671,4 +691,190 @@ async function rateRecipe(deps: ChefDeps, i: Extract<Intent, { type: 'rate' }>):
       return `Your rating of ${r.name} is back as it was.`
     },
   }
+}
+
+// ---------- eating ----------
+
+const FRACTION_WORD: Record<number, string> = { 1: 'all', 0.75: '¾', 0.5: 'half', 0.25: '¼', 0: 'none' }
+const kcalLine = (n: { energyKcal: number; proteinG: number }) => `${Math.round(n.energyKcal)} kcal, ${Math.round(n.proteinG)} g protein`
+
+async function ateMeal(deps: ChefDeps, date: string, slot: SlotName, fraction: number, recipeQuery?: string): Promise<Reply> {
+  if (date > deps.today) return answer('I can only log meals for today or earlier. To plan ahead, say e.g. “have butter chicken for dinner on Friday”.')
+  const planned = slot === 'breakfast' ? await plannedAt(deps.repo, date, 'breakfast') : await plannedAt(deps.repo, date, slot)
+  if (planned && (await eatenFor(deps.repo, planned.id))) return answer(`${cap(mealLabel(date, slot, deps.today))} is already logged.`, { options: [{ label: `Undo ${SLOT_LABEL[slot].toLowerCase()}`, run: () => undoLog(deps, date, slot) }] })
+  let recipe: Recipe | undefined
+  if (recipeQuery) {
+    const found = await findRecipes(deps.repo, recipeQuery)
+    if (!found.length) return answer(`I couldn’t find a recipe called “${recipeQuery}”. To log a single food, say e.g. “I had a banana”.`)
+    if (found.length > 1) return answer('Which one?', { options: found.map((r) => ({ label: r.name, run: () => ateMeal(deps, date, slot, fraction, r.name) })) })
+    recipe = found[0]
+  }
+  if (slot === 'breakfast' && recipe && recipe.id !== FIXED_BREAKFAST_ID) return answer('Breakfast is your fixed breakfast. To log something else, say e.g. “I had 2 eggs”.')
+  const currentRecipeId = slot === 'breakfast' ? FIXED_BREAKFAST_ID : planned?.recipeId
+  if (!recipe && !currentRecipeId) return answer(`Nothing was planned for ${mealLabel(date, slot, deps.today)}. Say what it was, e.g. “ate the salmon don for lunch”, or “I had a banana” for a single food.`)
+  const swapIn = recipe && recipe.id !== currentRecipeId ? recipe : undefined
+  let scale = planned?.portionScale ?? 1
+  if (swapIn) {
+    const t = await targetsOn(deps, date)
+    if (!t) return noTargets()
+    const nutrition = await loadRecipeNutrition(deps.repo)
+    scale = rankForSlot({ slot, recipes: [{ ...swapIn, slotTags: SLOT_TAGS[slot] }], nutrition, targetProtein: mid(t.day.slots[slot].proteinG) })[0]?.scale ?? 1
+  }
+  const recipeId = swapIn?.id ?? currentRecipeId!
+  const name = swapIn?.name ?? (await deps.repo.get('recipes', recipeId))?.name ?? 'the meal'
+  const pre = await previewMeal(deps.repo, { date, recipeId, portionScale: scale }, fraction)
+  const taken = pre.lines.filter((l) => l.taken)
+  const missing = pre.lines.filter((l) => l.missing)
+  return {
+    kind: 'proposal',
+    text: `Log ${mealLabel(date, slot, deps.today)}: ${name}${fraction < 1 ? `, ${FRACTION_WORD[fraction] ?? `${Math.round(fraction * 100)}%`}` : ''}?`,
+    changes: [
+      swapIn && currentRecipeId ? `${cap(mealLabel(date, slot, deps.today))}: ${(await deps.repo.get('recipes', currentRecipeId))?.name} → ${swapIn.name}` : '',
+      `Eaten: ${kcalLine(pre.nutrition)}`,
+      taken.length ? `From your pantry: ${taken.map((l) => `${l.label} ${l.taken}`).join(', ')}` : 'Nothing taken from your pantry (none of it is in stock)',
+      missing.length && taken.length ? `Not in your pantry: ${missing.map((l) => l.label).join(', ')}` : '',
+      fraction < 1 && taken.length ? `The rest you cooked is recorded as leftover waste${pre.wasteCents ? ` (${money(pre.wasteCents)})` : ''}` : '',
+    ].filter(Boolean),
+    apply: async () => {
+      const prev = planned ? { recipeId: planned.recipeId, portionScale: planned.portionScale, time: planned.time } : null
+      let mealId = planned?.id
+      if (swapIn) {
+        const t = (await targetsOn(deps, date))!
+        await assignMeal(deps.repo, { date, slot, time: t.day.slots[slot].time, recipeId: swapIn.id, portionScale: scale, targetsId: t.id, targetsVersion: t.version })
+        mealId = (await plannedAt(deps.repo, date, slot))!.id
+      } else if (!mealId) mealId = (await ensureBreakfast(deps.repo, date)).id
+      const c = await eatMeal(deps.repo, deps.pantry, mealId, fraction, deps.today)
+      return {
+        text: `Logged ${mealLabel(date, slot, deps.today)}: ${kcalLine(c.nutrition)}.`,
+        link: { to: '/', label: 'See Today' },
+        undo: async () => {
+          await undoEaten(deps.repo, deps.pantry, c.id)
+          if (swapIn) {
+            const t = (await targetsOn(deps, date))!
+            if (prev) await assignMeal(deps.repo, { date, slot, time: prev.time, recipeId: prev.recipeId, portionScale: prev.portionScale, targetsId: t.id, targetsVersion: t.version })
+            else await clearMeal(deps.repo, date, slot)
+          }
+          return `${cap(mealLabel(date, slot, deps.today))} is no longer logged.`
+        },
+      }
+    },
+  }
+}
+
+async function skipped(deps: ChefDeps, date: string, slot: SlotName): Promise<Reply> {
+  if (date > deps.today) return clear(deps, date, slot)
+  const planned = await plannedAt(deps.repo, date, slot)
+  if (!planned && slot !== 'breakfast') return answer(`Nothing was planned for ${mealLabel(date, slot, deps.today)}, so there’s nothing to skip.`)
+  if (planned && (await eatenFor(deps.repo, planned.id))) return answer(`${cap(mealLabel(date, slot, deps.today))} is already logged.`, { options: [{ label: `Undo ${SLOT_LABEL[slot].toLowerCase()}`, run: () => undoLog(deps, date, slot) }] })
+  return {
+    kind: 'proposal',
+    text: `Mark ${mealLabel(date, slot, deps.today)} as skipped?`,
+    changes: ['Counts as nothing eaten; nothing leaves your pantry'],
+    apply: async () => {
+      const id = planned?.id ?? (await ensureBreakfast(deps.repo, date)).id
+      const c = await eatMeal(deps.repo, deps.pantry, id, 0, deps.today)
+      return {
+        text: `${cap(mealLabel(date, slot, deps.today))} marked skipped.`,
+        undo: async () => {
+          await undoEaten(deps.repo, deps.pantry, c.id)
+          return `${cap(mealLabel(date, slot, deps.today))} is no longer marked skipped.`
+        },
+      }
+    },
+  }
+}
+
+// coffees aren't in the food list: count their milk
+const DRINKS: Array<[RegExp, number]> = [[/\b(flat white)\b/, 180], [/\b(latte)\b/, 250], [/\b(cappuccino|cap)\b/, 150], [/\b(long black|espresso|black coffee)\b/, 0]]
+
+async function quickFood(deps: ChefDeps, date: string, item: string, qty?: number, unit?: QtyUnit): Promise<Reply> {
+  if (date > deps.today) return answer('I can only log food for today or earlier.')
+  const drink = DRINKS.find(([re]) => re.test(item))
+  if (drink) {
+    if (drink[1] === 0) return answer(`A ${item} is close to nothing, so there’s nothing to log.`)
+    return quickFood(deps, date, 'milk', drink[1] * (qty ?? 1), 'ml').then((r) => (r.kind === 'proposal' ? { ...r, text: r.text.replace(/^Log /, `Log ${qty ?? 1} ${item} as `) } : r))
+  }
+  // a recipe planned today by that name: log that meal
+  const planned = await deps.repo.db.planned_meals.where('date').equals(date).toArray()
+  for (const r of await findRecipes(deps.repo, item)) {
+    const p = planned.find((x) => x.recipeId === r.id)
+    if (p && !(await eatenFor(deps.repo, p.id))) return ateMeal(deps, date, p.slot, 1)
+  }
+  const [products, foods, lots] = await Promise.all([deps.repo.db.products.toArray(), deps.repo.db.foods.toArray(), deps.repo.db.inventory_lots.toArray()])
+  const hit = searchItems(item, products, foods, 1)[0]
+  if (!hit) return answer(`I couldn’t find “${item}” in the food list.`, { link: { to: '/', label: 'Add it on Today' } })
+  const choice: QuickChoice = hit.kind === 'product' ? { kind: 'product', product: hit.product } : { kind: 'food', food: hit.food, label: hit.label }
+  const food = hit.kind === 'food' ? hit.food : foods.find((f) => f.id === hit.product.foodId)
+  let quantity = qty ?? (food?.gramsPerUnit ? 1 : 100)
+  let u: QtyUnit = unit ?? (food?.gramsPerUnit ? 'unit' : 'g')
+  if (u === 'unit' && !food?.gramsPerUnit) {
+    if (qty) return answer(`How much ${hit.label} was it in grams? e.g. “had 150 g of ${hit.label.toLowerCase()}”.`)
+    quantity = 100
+    u = 'g'
+  }
+  const productIds = new Set(products.filter((p) => p.id === (hit.kind === 'product' ? hit.product.id : '') || (food && p.foodId === food.id)).map((p) => p.id))
+  const fromPantry = lots.some((l) => l.remaining > 1e-9 && productIds.has(l.productId))
+  const input = { choice, quantity, unit: u, date, slot: 'snack' as const, fromPantry }
+  const pre = await previewQuick(deps.repo, input)
+  const amountText = u === 'unit' ? `${quantity}` : formatQty(quantity, u)
+  return {
+    kind: 'proposal',
+    text: `Log ${amountText} ${hit.label.toLowerCase()} as a snack?`,
+    changes: [
+      `${kcalLine(pre.nutrition)} (${Math.round(pre.grams)} g)`,
+      fromPantry ? `From your pantry: ${pre.taken ?? 'none'}${pre.missing ? `; ${pre.missing} more than you have` : ''}` : 'Not from your pantry',
+      !qty ? `Amount guessed; say e.g. “had 150 g of ${hit.label.toLowerCase()}” to be exact` : '',
+    ].filter(Boolean),
+    apply: async () => {
+      const c = await eatQuick(deps.repo, deps.pantry, input, deps.today)
+      return {
+        text: `Logged ${hit.label.toLowerCase()}: ${kcalLine(c.nutrition)}.`,
+        link: { to: '/', label: 'See Today' },
+        undo: async () => {
+          await undoEaten(deps.repo, deps.pantry, c.id)
+          return `Removed ${hit.label.toLowerCase()} from your log.`
+        },
+      }
+    },
+  }
+}
+
+async function undoLog(deps: ChefDeps, date: string, slot?: SlotName, item?: string): Promise<Reply> {
+  const day = await loadDay(deps.repo, date)
+  let target: { id: string; what: string } | undefined
+  if (slot) {
+    const p = await plannedAt(deps.repo, date, slot)
+    const c = p ? day.logged.get(p.id) : undefined
+    if (c) target = { id: c.id, what: mealLabel(date, slot, deps.today) }
+  } else if (item) {
+    const words = item.toLowerCase().split(' ').map((w) => w.replace(/s$/, ''))
+    const q = [...day.quick].reverse().find((x) => words.every((w) => x.quick!.label.toLowerCase().includes(w)))
+    if (q) target = { id: q.id, what: q.quick!.label }
+  }
+  if (!target) return answer(`I can’t find that in ${dayLabel(date, deps.today)}’s log.`, { link: { to: '/', label: 'See Today' } })
+  const t = target
+  return {
+    kind: 'proposal',
+    text: `Remove ${t.what} from your log?`,
+    changes: ['Anything it took from your pantry goes back; any leftover waste is cancelled'],
+    apply: async () => {
+      await undoEaten(deps.repo, deps.pantry, t.id)
+      return { text: `${cap(t.what)} removed from your log.`, link: { to: '/', label: 'See Today' } }
+    },
+  }
+}
+
+async function eatenOn(deps: ChefDeps, date: string): Promise<Reply> {
+  const day = await loadDay(deps.repo, date)
+  const planned = await deps.repo.db.planned_meals.where('date').equals(date).toArray()
+  const names = new Map((await deps.repo.db.recipes.toArray()).map((r) => [r.id, r.name]))
+  const lines: string[] = []
+  for (const s of SLOTS) {
+    const p = planned.find((x) => x.slot === s)
+    const c = p ? day.logged.get(p.id) : undefined
+    if (c) lines.push(`${SLOT_LABEL[s]}: ${c.fractionEaten === 0 ? 'skipped' : `${names.get(p!.recipeId)}${c.fractionEaten < 1 ? ` (${FRACTION_WORD[c.fractionEaten] ?? `${Math.round(c.fractionEaten * 100)}%`})` : ''} · ${Math.round(c.nutrition.energyKcal)} kcal`}`)
+  }
+  for (const q of day.quick) lines.push(`${q.quick!.label}: ${Math.round(q.nutrition.energyKcal)} kcal`)
+  if (!lines.length) return answer(`Nothing logged ${date === deps.today ? 'yet today' : `for ${dayLabel(date, deps.today)}`}. Say e.g. “I ate breakfast”.`)
+  return answer(`${cap(dayLabel(date, deps.today))}: ${kcalLine(day.totals)} so far.`, { lines, link: { to: '/', label: 'See Today' } })
 }

@@ -77,11 +77,11 @@ export class Pantry {
   }
 
   /** Throw away food: a discard transaction plus a waste record costed at the lot's unit cost. */
-  discard(lotId: string, qty: number, reason: WasteRecord['reason']): Promise<WasteRecord> {
+  discard(lotId: string, qty: number, reason: WasteRecord['reason'], consumptionId?: string): Promise<WasteRecord> {
     if (!(qty > 0)) throw new IntegrityError('quantity must be more than zero')
     return this.repo.tx(async () => {
       const lot = await this.lot(lotId)
-      const txn = await this.writeTxn(lot, 'discard', -qty)
+      const txn = await this.writeTxn(lot, 'discard', -qty, { consumptionId })
       const waste: WasteRecord = {
         id: newId(),
         transactionId: txn.id,

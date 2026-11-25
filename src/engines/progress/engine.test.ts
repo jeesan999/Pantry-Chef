@@ -104,9 +104,21 @@ describe('maintenance calibration', () => {
       expect(a.newActivityFactor).toBeLessThan(1.55)
       expect(a.maintenanceAfter).toBeLessThan(2690)
       expect(a.kcalChange).toBeGreaterThanOrEqual(-269) // capped at 10%
-      expect(a.reason).toMatch(/expected losing 0\.4 kg\/week/)
+      expect(a.reason).toMatch(/your targets would give losing 0\.4 kg\/week.*assumes you ate to plan/)
     }
   })
+  it('with 10+ logged days, judges against what you ate, not the plan', () => {
+    const rate = weeklyRate(series('2026-10-01', 28, 82, 0))
+    // flat weight while eating 2,690 on average: maintenance really is 2,690, no change
+    expect(suggestAdjustment({ ...base, rate, intake: { avgKcal: 2690, days: 20 } })).toMatchObject({ kind: 'none', why: expect.stringMatching(/what you ate/) })
+    // flat while eating 2,450: maintenance is about 2,450
+    const a = suggestAdjustment({ ...base, rate, intake: { avgKcal: 2450, days: 20 } })
+    expect(a.kind === 'suggest' && a.reason).toMatch(/from 20 fully logged days averaging 2,450 kcal/)
+    if (a.kind === 'suggest') expect(Math.abs(a.maintenanceAfter - 2450)).toBeLessThan(30)
+    // too few logged days: back to the plan assumption
+    expect(suggestAdjustment({ ...base, rate, intake: { avgKcal: 2690, days: 6 } }).kind).toBe('suggest')
+  })
+
   it('losing faster than expected: maintenance was underestimated, so raise it', () => {
     const a = suggestAdjustment({ ...base, rate: weeklyRate(series('2026-10-01', 28, 82, -1)) })
     expect(a.kind === 'suggest' && a.newActivityFactor).toBeGreaterThan(1.55)

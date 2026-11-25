@@ -281,7 +281,7 @@ test('Progress: trend from 4 weeks of weigh-ins, calibration proposed and approv
   await expect(page.getByTestId('trend')).toHaveText('steady')
   await expect(page.getByRole('img', { name: /Weight chart: \d+ weigh-ins/ })).toBeVisible()
   // flat weight on a deficit: maintenance was overestimated
-  await expect(page.getByText(/your targets expected losing/)).toBeVisible()
+  await expect(page.getByText(/your targets would give losing/)).toBeVisible()
   await page.getByRole('button', { name: 'Propose new targets' }).click()
   await page.getByRole('link', { name: 'Review and approve them on Goals' }).click()
   await expect(page.getByText(/assumes you ate to plan/)).toBeVisible()
@@ -357,6 +357,64 @@ test('Planner: draft, lock, swap, accept, undo; ratings keep a recipe out; Chef 
   await expect(page.getByText(/Your targets changed \(now v2\)\. 21 upcoming meals/)).toBeVisible()
   await page.getByRole('button', { name: 'Re-portion upcoming meals' }).click()
   await expect(page.getByText(/Re-portioned \d+ meals? for your new targets/)).toBeVisible()
+})
+
+test('Eating: half a lunch from the pantry with leftover waste, undo, a snack, yesterday’s breakfast, Chef “I had a banana”', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.clock.setFixedTime(new Date('2026-11-26T15:00:00'))
+  await approveTargets(page)
+  await page.goto('/#/scan')
+  await page.getByLabel('Choose a receipt photo').setInputFiles('e2e/fixtures/test-receipt-woolworths.jpg')
+  await expect(page.getByText('Check the receipt')).toBeVisible({ timeout: 90_000 })
+  await page.getByRole('button', { name: 'Save to pantry and expenses' }).click()
+  await expect(page.getByText(/items added to your pantry/)).toBeVisible()
+
+  await page.goto('/#/')
+  await page.getByRole('button', { name: 'Choose' }).nth(1).click() // lunch
+  await page.getByRole('dialog').getByRole('button', { name: /Lemon chicken, rice and greens bowl/ }).click()
+  await page.getByRole('button', { name: 'Mark Lunch eaten' }).click()
+  const sheet = page.getByRole('dialog')
+  await sheet.getByRole('radio', { name: 'Half' }).click()
+  await expect(sheet.getByText('From your pantry')).toBeVisible()
+  await expect(sheet.getByText(/Chicken breast: 1\d\d g/)).toBeVisible()
+  await expect(sheet.getByText(/leftover waste/)).toBeVisible()
+  await sheet.getByRole('button', { name: 'Log it' }).click()
+  await expect(page.getByText('eaten · Half')).toBeVisible()
+  await expect(page.getByRole('radio', { name: 'Eaten', checked: true })).toBeVisible()
+  await page.goto('/#/expenses')
+  const thrown = page.getByText('Food thrown out', { exact: true }).locator('xpath=following-sibling::dd')
+  await expect(thrown).not.toHaveText('$0.00')
+  await page.goto('/#/')
+  await page.getByRole('button', { name: 'Undo Lunch' }).click()
+  await expect(page.getByText('eaten · Half')).toHaveCount(0)
+  await page.goto('/#/expenses')
+  await expect(thrown).toHaveText('$0.00')
+
+  // a snack from the pantry
+  await page.goto('/#/')
+  await page.getByRole('button', { name: 'Add food' }).click()
+  await page.getByLabel('Search foods').fill('banana')
+  await page.getByRole('option', { name: /Bananas Cavendish/ }).click()
+  await expect(page.getByText(/From my pantry/)).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(page.getByRole('dialog').getByText('Added: Bananas Cavendish')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('button', { name: 'Undo Bananas Cavendish' })).toBeVisible()
+
+  // yesterday's breakfast
+  await page.getByRole('button', { name: 'Previous day' }).click()
+  await expect(page.locator('h1')).toHaveText('Yesterday')
+  await page.getByRole('button', { name: 'Mark Breakfast eaten' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Log it' }).click()
+  await expect(page.getByText('eaten', { exact: true })).toBeVisible()
+
+  // Chef logs a quick food
+  await page.goto('/#/chef')
+  await page.getByLabel('Message Chef').fill('I had a banana')
+  await page.getByLabel('Message Chef').press('Enter')
+  await expect(page.getByText(/^Log 1 .*banana.* as a snack\?$/i)).toBeVisible()
+  await page.getByRole('button', { name: 'Do it' }).click()
+  await expect(page.getByText(/^Logged .*banana.*kcal/i)).toBeVisible()
 })
 
 async function tellChef(page: Page, text: string) {

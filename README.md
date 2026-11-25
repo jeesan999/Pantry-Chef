@@ -4,7 +4,7 @@ An installable, offline-first web app for meal planning, nutrition targets, pant
 All data stays on your device. No accounts, API keys or paid services. Once installed, the app makes
 no network requests (a Content Security Policy blocks them).
 
-## Status: Phase 8 (meal planner)
+## Status: Phase 9 (eating log)
 
 - 11 screens with navigation; Today, Plan, Recipes, Pantry, Goals & Targets, Progress (weigh-ins) and Settings work now;
   Scan Receipt, Expenses, Shopping List, Chef and Progress work too.
@@ -33,6 +33,12 @@ no network requests (a Content Security Policy blocks them).
   nudges towards cheaper meals. You get a draft: lock, swap or clear meals, then accept; undo is available. After new
   targets are approved, Today and Plan offer to re-portion upcoming meals. Rate recipes on their page or tell Chef
   (“I loved the salmon don”, “don’t suggest tacos again”). Logic: `src/engines/planner/engine.ts`.
+- Eating log (Today, or tell Chef “I ate lunch”, “had half my dinner”, “skipped smoko”, “I had a banana”): mark
+  meals eaten (all, ¾, half, ¼) or skipped, and add quick foods by amount. Food leaves the pantry soonest-dated first;
+  the uneaten part of a cooked meal is recorded as leftover waste; missing stock never blocks. Nutrition and cost are
+  frozen when logged, each day keeps a nutritional record, and every log can be undone. Today can step back 7 days and
+  shows eaten or planned totals. Progress calibrates maintenance from real intake once 10 days are fully logged.
+  Logic: `src/engines/eating/engine.ts`, `src/lib/eating.ts`. The database is now schema version 2.
 - 30-table IndexedDB database (Dexie) with foreign keys, validation, transactions and an append-only pantry ledger
   enforced in `src/db/repo.ts` and `src/db/pantry.ts`.
 - Engine A (Nutrition) in `src/engines/nutrition/engine.ts`: pure functions, emits the `TargetSet` contract in

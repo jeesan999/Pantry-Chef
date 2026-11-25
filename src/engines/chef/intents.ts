@@ -28,6 +28,11 @@ export type Intent =
   | { type: 'progress' }
   | { type: 'plan'; week: 'this' | 'next'; date?: string; replan: boolean }
   | { type: 'rate'; recipe?: string; date?: string; slot?: SlotName; flags: RatingFlag[]; stars?: 1 | 2 | 3 | 4 | 5 }
+  | { type: 'ate'; date: string; slot: SlotName; fraction: number; recipe?: string }
+  | { type: 'skipped'; date: string; slot: SlotName }
+  | { type: 'quick'; date: string; item: string; qty?: number; unit?: QtyUnit }
+  | { type: 'undoEaten'; date: string; slot?: SlotName; item?: string }
+  | { type: 'eatenToday'; date: string }
 
 export type Interpretation = { kind: 'intent'; intent: Intent } | { kind: 'unknown'; closest: string[] }
 
@@ -55,6 +60,11 @@ export const EXAMPLES = [
   'How’s my progress?',
   'Plan my week',
   'I loved the salmon don',
+  'I ate lunch',
+  'Had half my dinner',
+  'I had a banana',
+  'Skipped smoko',
+  'What have I eaten today?',
 ]
 
 const has = (s: string, re: RegExp) => re.test(s)
@@ -124,6 +134,21 @@ export function interpret(raw: string, today: string): Interpretation {
     }
   }
 
+  // eating: what have I eaten, undo a log, skipped, ate a meal
+  if (has(t, /\b(what|how much|how many calories)\b.*\b(have i|did i|i have|i)\s+(eaten|eat|had|ate)\b/)) return ok({ type: 'eatenToday', date })
+  const pastEat = /\b(ate|eaten|had|finished|scoffed|polished off)\b/
+  if (has(t, /\bundo\b/) && (w.slot || pastEat.test(t)) || has(t, /\b(didnt|did not) (actually )?(eat|have)\b.*\b(after all|by mistake)\b|\b(logged|marked) .* by mistake\b/)) {
+    const item = cleanItem(w.rest.replace(/\b(undo|didnt|did not|actually|eat|have|ate|had|after all|by mistake|logged|marked|eaten|the|my)\b/g, ' '))
+    return ok({ type: 'undoEaten', date, slot: w.slot, item: w.slot ? undefined : item || undefined })
+  }
+  if (w.slot && has(t, /\b(skipped|missed|didnt have|didnt eat|did not have|did not eat|went without|no time for|never had)\b/)) return ok({ type: 'skipped', date, slot: w.slot })
+  if (w.slot && pastEat.test(t) && !has(t, /\b(whats|what is|what did|what was)\b/)) {
+    const f = t.match(/\b(half|a half|quarter|a quarter|three quarters|most|some|a bit|all|the whole|whole)\b/)
+    const fraction = !f ? 1 : /three quarters|most/.test(f[1]) ? 0.75 : /quarter|a bit/.test(f[1]) ? 0.25 : /half|some/.test(f[1]) ? 0.5 : 1
+    const recipe = stripFiller(w.rest.replace(/\b(i|ate|eaten|had|finished|scoffed|polished off|half|a half|quarter|a quarter|three quarters|most|some|a bit|all|the whole|whole|of|my|for|as|just|only|instead|today|already|meal)\b/g, ' ')).replace(/\s+/g, ' ').trim()
+    return ok({ type: 'ate', date, slot: w.slot, fraction, recipe: recipe || undefined })
+  }
+
   // meal planner: "plan my week", "plan next week", "fill the rest of the week", "replan friday"
   const replan = has(t, /\b(replan|re plan|start over|from scratch|redo)\b/)
   if (
@@ -151,6 +176,14 @@ export function interpret(raw: string, today: string): Interpretation {
       ).replace(/\s+/g, ' ').trim()
       return ok({ type: 'rate', recipe: recipe || undefined, date: w.date, slot: w.slot, flags, stars: st ? (Number(st[1]) as 1 | 2 | 3 | 4 | 5) : undefined })
     }
+  }
+
+  // quick food: "I had a banana", "ate 2 eggs", "had 250 ml milk"
+  const quickM = t.match(/^(?:i |just |i just |ive |i have )?(?:ate|had|eaten|have had|snacked on|drank|drunk)\s+(.+)$/)
+  if (quickM && !w.slot) {
+    const a = amount(quickM[1])
+    const item = cleanItem(a.rest.replace(/\b(as a snack|for a snack|snack|earlier|just now|before|after|this morning|this afternoon|tonight)\b/g, ' '))
+    if (item) return ok({ type: 'quick', date, item, qty: a.qty, unit: a.unit })
   }
 
   // progress

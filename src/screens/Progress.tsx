@@ -171,7 +171,7 @@ function AdjustCard({ d }: { d: ProgressData }) {
       ) : (
         <p className="text-sm text-stone-600">{a.why}</p>
       )}
-      <p className="mt-2 text-xs text-stone-500">Compares your weight trend with what your targets expect, assuming you ate to plan. Nothing changes until you approve it.</p>
+      <p className="mt-2 text-xs text-stone-500">Compares your weight trend with what you ate (once 10 days are fully logged; until then, your plan). Nothing changes until you approve it.</p>
     </Card>
   )
 }

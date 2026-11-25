@@ -133,6 +133,54 @@ describe('Chef: planner and ratings', () => {
   })
 })
 
+describe('Chef: eating', () => {
+  it('“had half my dinner”: proposal with the pantry and waste, Do it logs it, undo; protein left uses what was eaten', async () => {
+    await scanWoolworths()
+    const p = as(await ask(deps, 'had half my dinner'), 'proposal')
+    expect(p.text).toMatch(/^Log tonight’s dinner: Lemon chicken, rice and greens bowl, half\?$/)
+    expect(p.changes.join('\n')).toMatch(/From your pantry: .*Chicken breast 150 g/)
+    expect(p.changes.join('\n')).toMatch(/leftover waste/)
+    const done = await p.apply()
+    expect(await repo.db.meal_consumption.count()).toBe(1)
+    const left = as(await ask(deps, 'how much protein is left today'), 'answer')
+    expect(left.lines!.find((l) => l.startsWith('Protein'))).toMatch(/eaten/)
+    expect(as(await ask(deps, 'what have I eaten today'), 'answer').lines![0]).toMatch(/^Dinner: Lemon chicken.*\(half\)/)
+    expect(as(await ask(deps, 'ate dinner'), 'answer').text).toMatch(/already logged/)
+    await done.undo!()
+    expect((await repo.db.meal_consumption.toArray())[0].undone).toBe(true)
+  })
+
+  it('“ate the salmon don for lunch” swaps it in and logs it; undo restores the plan', async () => {
+    const p = as(await ask(deps, 'ate the salmon don for lunch'), 'proposal')
+    const done = await p.apply()
+    const lunch = await repo.db.planned_meals.where('[date+slot]').equals([TODAY, 'lunch']).first()
+    expect((await repo.get('recipes', lunch!.recipeId))!.name).toMatch(/salmon don/i)
+    await done.undo!()
+    expect(await repo.db.planned_meals.where('[date+slot]').equals([TODAY, 'lunch']).first()).toBeUndefined()
+  })
+
+  it('quick foods: a banana from the pantry, a flat white as milk; undo by name', async () => {
+    await scanWoolworths()
+    const p = as(await ask(deps, 'I had a banana'), 'proposal')
+    expect(p.changes.join('\n')).toMatch(/From your pantry/)
+    await p.apply()
+    const fw = as(await ask(deps, 'just had a flat white'), 'proposal')
+    expect(fw.text).toMatch(/^Log 1 flat white as 180 ml/)
+    await fw.apply()
+    expect((await repo.db.meal_consumption.toArray()).filter((c) => c.quick)).toHaveLength(2)
+    const u = as(await ask(deps, 'undo the banana I had'), 'proposal')
+    await u.apply()
+    expect((await repo.db.meal_consumption.toArray()).filter((c) => c.quick && !c.undone)).toHaveLength(1)
+  })
+
+  it('skipped smoko logs a skip only for past or present days; future skips clear the plan', async () => {
+    expect(as(await ask(deps, 'skipped smoko'), 'answer').text).toMatch(/Nothing was planned/)
+    const b = as(await ask(deps, "didn't have breakfast"), 'proposal')
+    await b.apply()
+    expect((await repo.db.meal_consumption.toArray())[0].fractionEaten).toBe(0)
+  })
+})
+
 describe('Chef: training days', () => {
   it('make tomorrow a rest day; undo returns to the usual week', async () => {
     const before = await dayChoice(repo, '2026-11-27')

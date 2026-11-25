@@ -363,12 +363,17 @@ export interface PlannedMeal {
   portionScale: number
 }
 
+/** Something eaten: a planned meal (fraction 0 = skipped) or a quick food. Frozen when logged. */
 export interface MealConsumption {
   id: Id
-  plannedMealId: Id
-  fractionEaten: number
-  nutrition: Nutrients // frozen totals
-  costCents: number // frozen
+  plannedMealId?: Id // a planned meal...
+  quick?: { foodId?: Id; productId?: Id; label: string; quantity: number; unit: QtyUnit; grams: number } // ...or a quick food
+  date: string
+  time: string // HH:MM
+  slot?: SlotName | 'snack'
+  fractionEaten: number // 0..1; 0 = skipped
+  nutrition: Nutrients // frozen totals of what was eaten
+  costCents: number // frozen cost of what was eaten
   at: string
   undone: boolean
 }

@@ -10,6 +10,7 @@ import { saveReceipt, toCheckedLines } from '../receipts/save'
 import { assignMeal } from './day'
 import { acceptDraft, buildDraft, reportion, staleTargets, type DraftParams } from './planner'
 import { rate } from './ratings'
+import { eatMeal } from './eating'
 
 const TODAY = '2026-11-26' // Thursday
 let repo: Repo
@@ -83,6 +84,17 @@ describe('planner with the real recipes', () => {
     await acceptDraft(repo, d)
     expect((await repo.db.planned_meals.where('[date+slot]').equals(['2026-11-27', 'lunch']).first())!.recipeId).toBe(swapped.recipeId)
     expect(await repo.db.planned_meals.where('[date+slot]').equals(['2026-11-27', 'dinner']).first()).toBeUndefined() // cleared
+  })
+
+  it('a meal already logged is never replanned, even early in the day', async () => {
+    const t = (await repo.db.nutrition_targets.where('status').equals('approved').first())!
+    await assignMeal(repo, { date: TODAY, slot: 'dinner', time: '18:00', recipeId: 'recipe:au-chicken-rice-bowl', portionScale: 1, targetsId: t.id, targetsVersion: t.version! })
+    const dinner = (await repo.db.planned_meals.where('[date+slot]').equals([TODAY, 'dinner']).first())!
+    await eatMeal(repo, pantry, dinner.id, 1, TODAY)
+    const d = await buildDraft(repo, week({ mode: 'unlocked' }), TODAY, '08:00')
+    expect(d.result.meals.some((m) => m.date === TODAY && m.slot === 'dinner')).toBe(false)
+    await acceptDraft(repo, d)
+    expect((await repo.db.planned_meals.where('[date+slot]').equals([TODAY, 'dinner']).first())!.recipeId).toBe('recipe:au-chicken-rice-bowl')
   })
 
   it('never suggests a recipe rated "don’t suggest"', async () => {

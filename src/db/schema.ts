@@ -37,7 +37,7 @@ export const STORES = {
   // Meals
   meal_plans: 'id, weekStart, targetsId',
   planned_meals: 'id, mealPlanId, date, [date+slot], recipeId',
-  meal_consumption: 'id, plannedMealId',
+  meal_consumption: 'id, plannedMealId, date',
   nutritional_records: 'id, &date, targetsId, workoutId',
   // Progress
   weight_measurements: 'id, profileId, date',
@@ -81,9 +81,22 @@ export interface RecordMap {
 
 export type ChefDB = Dexie & { [K in TableName]: EntityTable<RecordMap[K], 'id'> }
 
+/** Version 1 differed only in meal_consumption, which had no date index. */
+export const STORES_V1 = { ...STORES, meal_consumption: 'id, plannedMealId' }
+
 export function openDb(name = 'personal-chef'): ChefDB {
   const db = new Dexie(name) as ChefDB
-  db.version(1).stores(STORES)
+  db.version(1).stores(STORES_V1)
+  // v2: meal_consumption gains a date (and may be a quick food with no planned meal)
+  db.version(2).stores(STORES).upgrade(async (tx) => {
+    const meals = tx.table('planned_meals')
+    const rows = await tx.table('meal_consumption').toArray()
+    for (const c of rows) {
+      if (c.date) continue
+      const pm = c.plannedMealId ? await meals.get(c.plannedMealId) : undefined
+      await tx.table('meal_consumption').put({ ...c, date: pm?.date ?? String(c.at).slice(0, 10), time: pm?.time ?? String(c.at).slice(11, 16), slot: pm?.slot })
+    }
+  })
   return db
 }
 
@@ -135,7 +148,7 @@ export const FOREIGN_KEYS: ForeignKey[] = [
   { table: 'meal_plans', field: 'targetsId', ref: 'nutrition_targets', onDelete: 'restrict' },
   { table: 'planned_meals', field: 'mealPlanId', ref: 'meal_plans', onDelete: 'cascade' },
   { table: 'planned_meals', field: 'recipeId', ref: 'recipes', onDelete: 'restrict' },
-  { table: 'meal_consumption', field: 'plannedMealId', ref: 'planned_meals', onDelete: 'restrict' },
+  { table: 'meal_consumption', field: 'plannedMealId', ref: 'planned_meals', onDelete: 'restrict', optional: true },
   { table: 'nutritional_records', field: 'targetsId', ref: 'nutrition_targets', onDelete: 'restrict' },
   { table: 'nutritional_records', field: 'workoutId', ref: 'workouts', onDelete: 'restrict', optional: true },
   { table: 'weight_measurements', field: 'profileId', ref: 'profile', onDelete: 'cascade' },

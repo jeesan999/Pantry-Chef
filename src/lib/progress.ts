@@ -4,6 +4,7 @@ import { PROFILE_ID, SETTINGS_ID } from '../db/seed'
 import type { BodyGoal, WaistMeasurement, WeightMeasurement } from '../db/types'
 import { CONTRACT_VERSION } from '../engines/contract'
 import { activeGoal, approvedTargets, proposeTargets } from '../engines/nutrition/service'
+import { loggedDays } from './eating'
 import {
   dailyWeights,
   goalProgress,
@@ -74,8 +75,10 @@ export async function loadProgress(repo: Repo, today: string): Promise<ProgressD
     const targetKcal = (t.training.energyKcal * nTrain + t.rest.energyKcal * (7 - nTrain)) / 7
     // the trend is judged from whichever came later: the goal change or the last approval
     const since = [goal.startDate, approved.approvedAt?.slice(0, 10) ?? goal.startDate].sort().pop()!
+    const days = hasRate(rate) ? await loggedDays(repo, rate.from, rate.to) : []
     adjustment = suggestAdjustment({
       rate,
+      intake: days.length ? { avgKcal: days.reduce((s, d) => s + d.kcal, 0) / days.length, days: days.length } : undefined,
       targetKcal,
       maintenanceKcal: approved.inputs.maintenanceKcal,
       bmrKcal: approved.inputs.bmrKcal,

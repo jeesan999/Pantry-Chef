@@ -53,6 +53,13 @@ export async function assignMeal(
 }
 
 export async function clearMeal(repo: Repo, date: string, slot: SlotName): Promise<void> {
-  const existing = await repo.db.planned_meals.where('[date+slot]').equals([date, slot]).first()
-  if (existing) await repo.remove('planned_meals', existing.id)
+  await repo.tx(async () => {
+    const existing = await repo.db.planned_meals.where('[date+slot]').equals([date, slot]).first()
+    if (!existing) return
+    const logs = await repo.db.meal_consumption.where('plannedMealId').equals(existing.id).toArray()
+    if (logs.some((c) => !c.undone)) throw new Error('This meal is already marked eaten; undo that first.')
+    // undone logs stay as history (the pantry ledger points at them) but let go of the meal
+    for (const c of logs) await repo.update('meal_consumption', c.id, { plannedMealId: undefined })
+    await repo.remove('planned_meals', existing.id)
+  })
 }

@@ -79,6 +79,11 @@ export function MealCostsCard({ ctx }: { ctx: CostContext }) {
       today: day(date),
       weekAvg: plannedDays.length ? dayCost(plannedDays.map(day)) : null,
       plannedDays: plannedDays.length,
+      eaten: await (async () => {
+        const logs = (await db.meal_consumption.where('date').between(dates[0], date, true, true).toArray()).filter((c) => !c.undone)
+        const days = new Set(logs.map((c) => c.date)).size
+        return { cents: logs.reduce((s, c) => s + c.costCents, 0), days }
+      })(),
       priced: recipes
         .filter((r) => r.id !== FIXED_BREAKFAST_ID)
         .map((r) => ({ recipe: r, cost: costs.get(r.id)! }))
@@ -93,6 +98,11 @@ export function MealCostsCard({ ctx }: { ctx: CostContext }) {
   return (
     <Card title="Cost per meal and per day">
       <p className="mb-3 text-xs text-stone-500">Estimated from the latest price you paid for each ingredient. “Partial” means some ingredients have no price yet and are left out, not guessed.</p>
+      {data.eaten.days > 0 && (
+        <p className="tabular mb-3 rounded-xl bg-leaf-50 px-3 py-2 text-sm text-leaf-900">
+          What you ate this week cost {fmt.money(data.eaten.cents)}: {fmt.money(Math.round(data.eaten.cents / data.eaten.days))} a day over {data.eaten.days} logged day{data.eaten.days === 1 ? '' : 's'}.
+        </p>
+      )}
       <dl className="tabular grid grid-cols-2 gap-3 text-sm">
         <div><dt className="text-stone-500">Today’s plan</dt><dd className="text-lg"><CostValue cost={data.today} /></dd></div>
         <div>

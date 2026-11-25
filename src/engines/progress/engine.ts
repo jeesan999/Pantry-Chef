@@ -1,7 +1,7 @@
 /**
  * Engine F (Progress): weight trend, monthly summaries, goal progress and maintenance
  * calibration from the real trend. Pure functions; dates are 'YYYY-MM-DD'.
- * Assumes meals were eaten roughly as planned (eaten meals are not logged yet).
+ * Uses logged intake when there are enough complete days; otherwise assumes meals were eaten as planned.
  */
 import type { BodyGoal, WaistMeasurement, WeightMeasurement } from '../../db/types'
 import { addDays } from '../nutrition/engine'
@@ -123,6 +123,7 @@ export type AdjustmentResult = Adjustment | { kind: 'none'; why: string }
 
 const STEP_CAP = 0.1 // never move maintenance more than 10% at once
 const NOISE_KCAL = 100
+export const MIN_LOGGED_DAYS = 10
 
 /**
  * Recalibrate maintenance from the real trend. If weight moves faster or slower than the targets
@@ -136,14 +137,19 @@ export function suggestAdjustment(args: {
   bmrKcal: number
   activityFactor: number
   daysSinceGoalChange: number
+  intake?: { avgKcal: number; days: number } // complete logged days within the trend window
 }): AdjustmentResult {
-  const { rate, targetKcal, maintenanceKcal, bmrKcal, activityFactor, daysSinceGoalChange } = args
+  const { rate, targetKcal, maintenanceKcal, bmrKcal, activityFactor, daysSinceGoalChange, intake } = args
   if (!hasRate(rate)) return { kind: 'none', why: rate.why }
   if (daysSinceGoalChange < 14) return { kind: 'none', why: `Your goal changed ${daysSinceGoalChange} day${daysSinceGoalChange === 1 ? '' : 's'} ago. Give it at least 2 weeks before judging the trend.` }
-  const expected = expectedRate(targetKcal, maintenanceKcal)
+  const logged = !!intake && intake.days >= MIN_LOGGED_DAYS
+  // what you ate (logged) or what you planned to eat, against the weight change it produced
+  const eatenKcal = logged ? intake!.avgKcal : targetKcal
+  const expected = expectedRate(eatenKcal, maintenanceKcal)
   const gapKcal = ((rate.kgPerWeek - expected) * KCAL_PER_KG) / 7 // + means you burn less than estimated
+  const basis = logged ? `from ${intake!.days} fully logged days averaging ${Math.round(intake!.avgKcal).toLocaleString('en-AU')} kcal` : 'assumes you ate to plan'
   if (Math.abs(gapKcal) < NOISE_KCAL) {
-    return { kind: 'none', why: `Your trend (${fmtRate(rate.kgPerWeek)}) matches what your targets expect (${fmtRate(expected)}). No change needed.` }
+    return { kind: 'none', why: `Your trend (${fmtRate(rate.kgPerWeek)}) matches what ${logged ? 'you ate' : 'your targets'} would produce (${fmtRate(expected)}). No change needed.` }
   }
   const capped = Math.max(-STEP_CAP * maintenanceKcal, Math.min(STEP_CAP * maintenanceKcal, gapKcal))
   const rawAf = (maintenanceKcal - capped) / bmrKcal
@@ -158,7 +164,7 @@ export function suggestAdjustment(args: {
     kcalChange: after - maintenanceKcal,
     actual: rate.kgPerWeek,
     expected,
-    reason: `Your ${Math.round(rate.spanDays / 7)}-week trend is ${fmtRate(rate.kgPerWeek)}; your targets expected ${fmtRate(expected)}. Estimated maintenance ${maintenanceKcal.toLocaleString('en-AU')} → ${after.toLocaleString('en-AU')} kcal (assumes you ate to plan).`,
+    reason: `Your ${Math.round(rate.spanDays / 7)}-week trend is ${fmtRate(rate.kgPerWeek)}; ${logged ? 'what you ate' : 'your targets'} would give ${fmtRate(expected)}. Estimated maintenance ${maintenanceKcal.toLocaleString('en-AU')} → ${after.toLocaleString('en-AU')} kcal (${basis}).`,
   }
 }
 

@@ -112,6 +112,9 @@ export async function buildDraft(repo: Repo, params: DraftParams, today: string,
   const existing: Meal[] = planned.filter((p) => p.slot !== 'breakfast').map((p) => ({ date: p.date, slot: p.slot as PlanSlot, recipeId: p.recipeId, portionScale: p.portionScale }))
   const past = new Set<string>()
   for (const date of dates) for (const s of PLAN_SLOTS) if (date === today && now && days[date].slots[s].time <= now) past.add(slotKey({ date, slot: s }))
+  // meals already logged (eaten or skipped) are fixed, whatever the time
+  const logged = new Set((await repo.db.meal_consumption.where('date').between(dates[0], dates[dates.length - 1], true, true).toArray()).filter((c) => !c.undone && c.plannedMealId).map((c) => c.plannedMealId!))
+  for (const p of planned) if (logged.has(p.id) && p.slot !== 'breakfast') past.add(slotKey({ date: p.date, slot: p.slot }))
   const lockKeys = new Set(params.locks.map(slotKey))
   const skipKeys = new Set(params.skips)
   const locked: Meal[] = [
