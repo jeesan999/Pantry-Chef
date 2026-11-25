@@ -122,7 +122,14 @@ test('Today: switch today to rest and back', async ({ page }) => {
   await expect(page.getByText(/easy to digest/)).toHaveCount(0)
   await group.getByRole('button', { name: /^Training/ }).click()
   await expect(group.getByRole('button', { name: /^Training/ })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByText('Carbs (daily minimum)')).toBeVisible()
+  // symbols show amount, target and status in words; the overview lists every nutrient with its difference
+  await expect(page.getByRole('img', { name: /^Protein \d+ of \d+ g, \d+%, (low|on track|reached|over)$/ })).toBeVisible()
+  await page.getByText(/^Nutrition overview/).click()
+  const overview = page.getByRole('table', { name: /nutrition for/ })
+  await expect(overview.getByText('Carbs (daily minimum)')).toBeVisible()
+  for (const n of ['Calories', 'Fibre', 'Saturated fat', 'Added sugar']) await expect(overview.getByRole('rowheader', { name: new RegExp(`^${n}`) })).toBeVisible()
+  await expect(overview.getByText(/natural · .* added/)).toBeVisible()
+  await expect(overview.getByText(/significantly below|slightly below|on target|above/).first()).toBeVisible()
 })
 
 async function addToPantry(page: Page, name: string, qty: string, cost: string) {

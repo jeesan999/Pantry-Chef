@@ -1,6 +1,7 @@
 import { CircleAlert, CircleCheck, Copy, MoreHorizontal, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { DaySnapshot } from '../../components/DaySnapshot'
 import { PantryCheckSheet } from '../../components/PantryCheck'
 import { Badge, Button, Sheet, cx, fmt } from '../../components/ui'
 import { repo } from '../../db/instance'
@@ -12,8 +13,8 @@ import { RecipePicker } from './RecipePicker'
 
 export type Undoable = { text: string; undo?: () => Promise<void> }
 
-const toneText = { leaf: 'text-leaf-700', ember: 'text-ember-600', red: 'text-red-700', stone: 'text-stone-500' }
-const toneBar = { leaf: 'bg-leaf-500', ember: 'bg-ember-500', red: 'bg-red-500', stone: 'bg-stone-400' }
+const toneText = { leaf: 'text-leaf-700', ember: 'text-ember-600', red: 'text-red-700', stone: 'text-stone-500', sky: 'text-sky-700' }
+const toneBar = { leaf: 'bg-leaf-500', ember: 'bg-ember-500', red: 'bg-red-600', stone: 'bg-stone-400', sky: 'bg-sky-700' }
 
 /** Planned totals against the day's targets, one compact bar per nutrient. */
 export function DayTotals({ day }: { day: DaySummary }) {
@@ -105,6 +106,10 @@ export function DayPlan({ day, dates, today, now, onDone }: { day: DaySummary; d
         })}
       </ul>
       <DayTotals day={day} />
+      <details className="mt-2 rounded-xl border border-stone-200 px-3 py-1">
+        <summary className="min-h-10 cursor-pointer content-center text-sm font-medium text-stone-700">Nutrition overview</summary>
+        <DaySnapshot totals={day.totals} day={day.target} costCents={day.costCents || null} unpriced={day.unpriced} caption={`Planned nutrition for ${fmt.date(day.date)}`} />
+      </details>
       <p className="tabular mt-1.5 text-xs text-stone-500">
         {day.costCents > 0 ? `About ${fmt.money(day.costCents)} of food` : 'Cost not known yet'}{day.unpriced > 0 && day.costCents > 0 ? ` + ${day.unpriced} meal${day.unpriced === 1 ? '' : 's'} not priced` : ''}
         {!past && ` · ${day.toBuy === 0 ? 'everything in the pantry' : `${day.toBuy} ingredient${day.toBuy === 1 ? '' : 's'} to buy`}`}
