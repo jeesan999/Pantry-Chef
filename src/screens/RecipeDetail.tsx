@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { RecipeArt } from '../components/RecipeArt'
+import { RatingControls } from '../components/RatingControls'
 import { Badge, Button, Card, Notice, Page, fmt } from '../components/ui'
 import { db, repo } from '../db/instance'
 import { nowIso } from '../db/repo'
@@ -115,6 +116,8 @@ export default function RecipeDetailScreen() {
         <p className="tabular mt-2 text-xs text-stone-500">Whole recipe at {s} servings: {fmt.kcal(total.energyKcal)}, {fmt.g(total.proteinG)} protein</p>
       </Card>
 
+      {!recipe.fixedSlot && <RatingControls recipeId={recipe.id} />}
+
       <Card title="Method">
         <ol className="list-decimal space-y-2 pl-5 text-sm text-stone-700">
           {recipe.method.map((m, i) => <li key={i}>{m}</li>)}
@@ -131,7 +134,6 @@ export default function RecipeDetailScreen() {
           </>
         )}
       </div>
-      <p className="text-xs text-stone-500">Ratings and flags (favourite, too slow, and so on) arrive in Phase 6.</p>
     </Page>
   )
 }

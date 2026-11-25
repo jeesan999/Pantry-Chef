@@ -11,7 +11,7 @@ import { SLOTS, type WorkoutType } from '../engines/contract'
 import { ACTIVITY_LEVELS, ageOn } from '../engines/nutrition/engine'
 import { fixedBreakfastNutrition } from '../engines/nutrition/service'
 import { SLOT_LABEL } from '../lib/day'
-import { exportBackup } from '../lib/backup'
+import { BackupCard } from './settings/BackupCard'
 import { useProfile, useSettings } from '../lib/hooks'
 
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -40,6 +40,7 @@ export default function SettingsScreen() {
       <TrainingCard />
       <NutritionCard settings={settings} />
       <BreakfastCard settings={settings} />
+      <BackupCard />
       <DataCard />
     </Page>
   )
@@ -206,8 +207,6 @@ function DataCard() {
     label: await db.foods.where('source').equals('label').count(),
   }))
   const [problems, setProblems] = useState<string[] | null>(null)
-  const [persisted, setPersisted] = useState<boolean | null>(null)
-  useEffect(() => { navigator.storage?.persisted?.().then(setPersisted).catch(() => setPersisted(null)) }, [])
   return (
     <Card title="Data">
       <div className="space-y-3 text-sm">
@@ -217,13 +216,7 @@ function DataCard() {
           <Badge tone="blue">{counts?.label ?? 0} from labels</Badge>
         </div>
         {counts && counts.afcd === 0 && <Notice>AFCD Release 3 has not been imported yet; recipes use interim values marked “approximate”.</Notice>}
-        <p className="text-stone-600">
-          Storage: {persisted === null ? 'unknown' : persisted ? 'protected from automatic clearing' : 'not yet protected (install the app to your home screen)'}. Your data lives only on this device.
-        </p>
-        <div className="grid grid-cols-2 gap-2">
-          <Button variant="secondary" onClick={async () => setProblems(await repo.checkIntegrity())}>Check data integrity</Button>
-          <Button variant="secondary" onClick={() => exportBackup()}>Export backup (JSON)</Button>
-        </div>
+        <Button variant="secondary" className="w-full" onClick={async () => setProblems(await repo.checkIntegrity())}>Check data integrity</Button>
         {problems && (problems.length === 0 ? <Notice tone="leaf">All links between records are sound.</Notice> : <Notice tone="red">{problems.length} problem(s): {problems.slice(0, 5).join('; ')}</Notice>)}
         <p className="text-xs text-stone-500">{AFCD_ATTRIBUTION}</p>
       </div>

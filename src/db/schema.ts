@@ -37,7 +37,7 @@ export const STORES = {
   // Meals
   meal_plans: 'id, weekStart, targetsId',
   planned_meals: 'id, mealPlanId, date, [date+slot], recipeId',
-  meal_consumption: 'id, plannedMealId',
+  meal_consumption: 'id, plannedMealId, date',
   nutritional_records: 'id, &date, targetsId, workoutId',
   // Progress
   weight_measurements: 'id, profileId, date',
@@ -81,10 +81,38 @@ export interface RecordMap {
 
 export type ChefDB = Dexie & { [K in TableName]: EntityTable<RecordMap[K], 'id'> }
 
+/** Version 1 differed only in meal_consumption, which had no date index. */
+export const STORES_V1 = { ...STORES, meal_consumption: 'id, plannedMealId' }
+
 export function openDb(name = 'personal-chef'): ChefDB {
   const db = new Dexie(name) as ChefDB
-  db.version(1).stores(STORES)
+  db.version(1).stores(STORES_V1)
+  // v2: meal_consumption gains a date (and may be a quick food with no planned meal)
+  db.version(2).stores(STORES).upgrade(async (tx) => {
+    const planned = await tx.table('planned_meals').toArray()
+    const rows = await tx.table('meal_consumption').toArray()
+    for (const c of migrateConsumptionV2(rows, planned)) await tx.table('meal_consumption').put(c)
+  })
   return db
+}
+
+export const SCHEMA_VERSION = 2
+
+/** v1 -> v2: consumptions gain date, time and slot from their planned meal. Shared by the Dexie upgrade and restore. */
+export function migrateConsumptionV2<T extends Record<string, unknown>>(rows: T[], planned: Array<Record<string, unknown>>): T[] {
+  const byId = new Map(planned.map((p) => [p.id, p]))
+  return rows.map((c) => {
+    if (c.date) return c
+    const pm = c.plannedMealId ? byId.get(c.plannedMealId) : undefined
+    return { ...c, date: pm?.date ?? String(c.at).slice(0, 10), time: pm?.time ?? String(c.at).slice(11, 16), slot: pm?.slot }
+  })
+}
+
+/** Bring a backup's tables up to the current schema, in memory. */
+export function migrateTables(tables: Record<string, Array<Record<string, unknown>>>, fromVersion: number): Record<string, Array<Record<string, unknown>>> {
+  let t = tables
+  if (fromVersion < 2) t = { ...t, meal_consumption: migrateConsumptionV2(t.meal_consumption ?? [], t.planned_meals ?? []) }
+  return t
 }
 
 /**
@@ -135,7 +163,7 @@ export const FOREIGN_KEYS: ForeignKey[] = [
   { table: 'meal_plans', field: 'targetsId', ref: 'nutrition_targets', onDelete: 'restrict' },
   { table: 'planned_meals', field: 'mealPlanId', ref: 'meal_plans', onDelete: 'cascade' },
   { table: 'planned_meals', field: 'recipeId', ref: 'recipes', onDelete: 'restrict' },
-  { table: 'meal_consumption', field: 'plannedMealId', ref: 'planned_meals', onDelete: 'restrict' },
+  { table: 'meal_consumption', field: 'plannedMealId', ref: 'planned_meals', onDelete: 'restrict', optional: true },
   { table: 'nutritional_records', field: 'targetsId', ref: 'nutrition_targets', onDelete: 'restrict' },
   { table: 'nutritional_records', field: 'workoutId', ref: 'workouts', onDelete: 'restrict', optional: true },
   { table: 'weight_measurements', field: 'profileId', ref: 'profile', onDelete: 'cascade' },

@@ -1,0 +1,192 @@
+/** Database side of the shopping list: builds it from planned meals, keeps ticks and extras, ticks off what a receipt bought. */
+import { IntegrityError, newId, nowIso, type Repo } from '../db/repo'
+import { FIXED_BREAKFAST_ID } from '../db/seed'
+import type { Product, QtyUnit, ShoppingList, ShoppingListItem } from '../db/types'
+import { costOf } from '../engines/cost/engine'
+import { addDays, mondayOf } from '../engines/nutrition/engine'
+import { buildShoppingNeeds, type MealToShopFor } from '../engines/shopping/engine'
+import { loadCostContext } from './expenses'
+import { guessCategory, guessStorage } from './itemSearch'
+
+export interface ListRange { from: string; to: string }
+
+/** "This week": today to Sunday. "Next week": Monday to Sunday. */
+export function thisWeekRange(today: string): ListRange {
+  return { from: today, to: addDays(mondayOf(today), 6) }
+}
+export function nextWeekRange(today: string): ListRange {
+  const mon = addDays(mondayOf(today), 7)
+  return { from: mon, to: addDays(mon, 6) }
+}
+
+export function datesBetween(r: ListRange): string[] {
+  const out: string[] = []
+  for (let d = r.from; d <= r.to && out.length < 62; d = addDays(d, 1)) out.push(d)
+  return out
+}
+
+/** Planned meals in the range, plus the fixed breakfast every day. */
+export async function mealsInRange(repo: Repo, r: ListRange): Promise<MealToShopFor[]> {
+  const planned = await repo.db.planned_meals.where('date').between(r.from, r.to, true, true).toArray()
+  const hasBreakfast = !!(await repo.db.recipes.get(FIXED_BREAKFAST_ID))
+  return [
+    ...(hasBreakfast ? datesBetween(r).map((date) => ({ date, recipeId: FIXED_BREAKFAST_ID, portionScale: 1 })) : []),
+    ...planned.map((p) => ({ date: p.date, recipeId: p.recipeId, portionScale: p.portionScale })),
+  ]
+}
+
+/** The list in use: the most recently updated one. */
+export async function currentList(repo: Repo): Promise<ShoppingList | undefined> {
+  const lists = await repo.db.shopping_lists.toArray()
+  return lists.sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt))[0]
+}
+
+export interface GenerateResult { listId: string; toBuy: number; covered: string[]; meals: number; plannedMeals: number }
+
+/**
+ * Build (or update) the list for a range. Plan lines are recalculated; their ticks survive when the
+ * same item is still needed. Extras are never touched. Foods never bought get a product so the list
+ * can name them, as Pantry's manual add does.
+ */
+export async function generateList(repo: Repo, r: ListRange, listId?: string): Promise<GenerateResult> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(r.from) || !/^\d{4}-\d{2}-\d{2}$/.test(r.to)) throw new IntegrityError('Choose the first and last day.')
+  if (r.from > r.to) throw new IntegrityError('The last day must be on or after the first day.')
+  if (datesBetween(r).length > 31) throw new IntegrityError('Choose up to 31 days.')
+  const ctx = await loadCostContext(repo)
+  return repo.tx(async () => {
+    const meals = await mealsInRange(repo, r)
+    const [recipes, ingredients, yields, lots] = await Promise.all([
+      repo.db.recipes.toArray(),
+      repo.db.recipe_ingredients.toArray(),
+      repo.db.cooking_yields.toArray(),
+      repo.db.inventory_lots.toArray(),
+    ])
+    const needs = buildShoppingNeeds({
+      meals,
+      recipes: new Map(recipes.map((x) => [x.id, x])),
+      ingredients,
+      foods: ctx.foods,
+      yields,
+      products: [...ctx.products.values()],
+      lots,
+      prices: ctx.prices,
+    })
+
+    const now = nowIso()
+    const plan = await repo.db.meal_plans.where('weekStart').equals(mondayOf(r.from)).first()
+    const mealPlanId = plan && r.to <= addDays(plan.weekStart, 6) ? plan.id : undefined
+    const name = `Meals ${r.from} to ${r.to}`
+    let list = listId ? await repo.get('shopping_lists', listId) : undefined
+    if (list) list = await repo.update('shopping_lists', list.id, { from: r.from, to: r.to, name, mealPlanId, updatedAt: now })
+    else {
+      list = { id: newId(), name, from: r.from, to: r.to, mealPlanId, createdAt: now, updatedAt: now }
+      await repo.insert('shopping_lists', list)
+    }
+
+    const existing = (await repo.db.shopping_list_items.where('listId').equals(list.id).toArray()).filter((i) => i.source !== 'extra')
+    const byKey = new Map(existing.map((i) => [`${i.productId}|${i.unit}`, i]))
+    const keep = new Set<string>()
+    let toBuy = 0
+    for (const n of needs) {
+      if (n.buyQty <= 0) continue
+      let productId = n.productId
+      if (!productId) {
+        const category = n.category
+        const p: Product = { id: newId(), name: n.label, foodId: n.foodId, category, storage: guessStorage(category, n.label), createdAt: now }
+        await repo.insert('products', p)
+        productId = p.id
+      }
+      const fields = {
+        quantity: n.buyQty,
+        unit: n.unit,
+        estCostCents: n.costCents ?? undefined,
+        label: n.label,
+        foodId: n.foodId,
+        neededQty: n.neededQty,
+        haveQty: n.haveQty,
+        recipes: n.recipes,
+        source: 'plan' as const,
+      }
+      const prev = byKey.get(`${productId}|${n.unit}`)
+      if (prev) {
+        await repo.update('shopping_list_items', prev.id, fields)
+        keep.add(prev.id)
+      } else {
+        await repo.insert('shopping_list_items', { id: newId(), listId: list.id, productId, ticked: false, ...fields })
+      }
+      toBuy++
+    }
+    for (const i of existing) if (!keep.has(i.id)) await repo.remove('shopping_list_items', i.id)
+    const covered = needs.filter((n) => n.buyQty <= 0).map((n) => n.label)
+    await repo.update('shopping_lists', list.id, { coveredLabels: covered })
+    return { listId: list.id, toBuy, covered, meals: meals.length, plannedMeals: meals.filter((m) => m.recipeId !== FIXED_BREAKFAST_ID).length }
+  })
+}
+
+export type ExtraChoice = { kind: 'product'; product: Product } | { kind: 'food'; foodId: string; label: string } | { kind: 'text'; name: string }
+
+/** Add something not in the meal plan (dish liquid, snacks). Matched to a product when one is picked or already exists. */
+export async function addExtra(repo: Repo, listId: string, choice: ExtraChoice, quantity = 1, unit: QtyUnit = 'unit'): Promise<ShoppingListItem> {
+  if (!(quantity > 0)) throw new IntegrityError('Enter how many or how much.')
+  const ctx = await loadCostContext(repo)
+  return repo.tx(async () => {
+    let product: Product | undefined
+    if (choice.kind === 'product') product = choice.product
+    else {
+      const name = choice.kind === 'text' ? choice.name.trim() : choice.label
+      if (!name) throw new IntegrityError('Type what you need.')
+      const foodId = choice.kind === 'food' ? choice.foodId : undefined
+      product = (await repo.db.products.toArray()).find((p) => (foodId && p.foodId === foodId) || p.name.toLowerCase() === name.toLowerCase())
+      if (!product) {
+        const category = guessCategory(name)
+        product = { id: newId(), name, foodId, category, storage: guessStorage(category, name), createdAt: nowIso() }
+        await repo.insert('products', product)
+      }
+    }
+    const price = ctx.prices.byProduct.get(product.id) ?? (product.foodId ? ctx.prices.byFood.get(product.foodId) : undefined)
+    const food = product.foodId ? ctx.foods.get(product.foodId) : undefined
+    const cost = price ? costOf(quantity, unit, price, food) : null
+    const item: ShoppingListItem = {
+      id: newId(), listId, productId: product.id, quantity, unit, ticked: false, source: 'extra', label: product.name, foodId: product.foodId,
+      estCostCents: cost === null ? undefined : Math.round(cost),
+    }
+    await repo.insert('shopping_list_items', item)
+    await repo.update('shopping_lists', listId, { updatedAt: nowIso() })
+    return item
+  })
+}
+
+export async function setTicked(repo: Repo, itemId: string, ticked: boolean): Promise<void> {
+  await repo.update('shopping_list_items', itemId, { ticked })
+}
+
+export async function clearTicked(repo: Repo, listId: string): Promise<number> {
+  return repo.tx(async () => {
+    const ticked = (await repo.db.shopping_list_items.where('listId').equals(listId).toArray()).filter((i) => i.ticked)
+    for (const i of ticked) await repo.remove('shopping_list_items', i.id)
+    return ticked.length
+  })
+}
+
+export const removeItem = (repo: Repo, itemId: string) => repo.remove('shopping_list_items', itemId)
+export const deleteList = (repo: Repo, listId: string) => repo.remove('shopping_lists', listId)
+
+/** After a receipt is saved: tick the open items it bought (same product, or a product of the same food). Returns how many. */
+export async function tickFromReceipt(repo: Repo, receiptId: string): Promise<number> {
+  return repo.tx(async () => {
+    const lines = await repo.db.receipt_items.where('receiptId').equals(receiptId).toArray()
+    const productIds = new Set(lines.map((l) => l.productId).filter((x): x is string => !!x))
+    if (!productIds.size) return 0
+    const products = await repo.db.products.bulkGet([...productIds])
+    const foodIds = new Set(products.map((p) => p?.foodId).filter((x): x is string => !!x))
+    const open = (await repo.db.shopping_list_items.toArray()).filter((i) => !i.ticked)
+    let n = 0
+    for (const i of open) {
+      if (productIds.has(i.productId) || (i.foodId && foodIds.has(i.foodId))) {
+        await repo.update('shopping_list_items', i.id, { ticked: true })
+        n++
+      }
+    }
+    return n
+  })
+}

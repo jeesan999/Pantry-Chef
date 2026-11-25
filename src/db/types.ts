@@ -96,6 +96,7 @@ export interface NutritionTargetRecord {
     goalAdjustPct: number
   }
   targetSet: TargetSet
+  note?: string // why it was proposed, e.g. a calibration from the weight trend
   createdAt: string
   approvedAt?: string
 }
@@ -271,17 +272,27 @@ export interface ShoppingList {
   id: Id
   mealPlanId?: Id
   name: string
+  from?: string // first and last day of meals the list covers
+  to?: string
+  coveredLabels?: string[] // needed by the meals but already in the pantry
   createdAt: string
+  updatedAt?: string
 }
 
 export interface ShoppingListItem {
   id: Id
   listId: Id
   productId: Id
-  quantity: number
+  quantity: number // to buy
   unit: QtyUnit
-  estCostCents: Cents
+  estCostCents?: Cents // absent when there is no price yet
   ticked: boolean
+  source?: 'plan' | 'extra'
+  label?: string
+  foodId?: Id
+  neededQty?: number // plan lines: what the meals call for
+  haveQty?: number // plan lines: pantry stock counted against it
+  recipes?: string[]
 }
 
 // ---------- Recipes ----------
@@ -352,12 +363,17 @@ export interface PlannedMeal {
   portionScale: number
 }
 
+/** Something eaten: a planned meal (fraction 0 = skipped) or a quick food. Frozen when logged. */
 export interface MealConsumption {
   id: Id
-  plannedMealId: Id
-  fractionEaten: number
-  nutrition: Nutrients // frozen totals
-  costCents: number // frozen
+  plannedMealId?: Id // a planned meal...
+  quick?: { foodId?: Id; productId?: Id; label: string; quantity: number; unit: QtyUnit; grams: number } // ...or a quick food
+  date: string
+  time: string // HH:MM
+  slot?: SlotName | 'snack'
+  fractionEaten: number // 0..1; 0 = skipped
+  nutrition: Nutrients // frozen totals of what was eaten
+  costCents: number // frozen cost of what was eaten
   at: string
   undone: boolean
 }

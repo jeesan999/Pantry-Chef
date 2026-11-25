@@ -1,7 +1,8 @@
-/** In-app events. The Meal Planning Engine listens for targets-approved (Phase 5). */
+/** In-app events. New approvals also show as stale plans (lib/planner.ts staleTargets), which reads the database, so it survives reloads. */
 export interface AppEvents {
   'targets-approved': { targetsId: string; version: number }
   'data-changed': { table: string }
+  'data-replaced': Record<string, never> // a backup was restored: drop anything held in memory
 }
 
 type AnyHandler = (payload: unknown) => void

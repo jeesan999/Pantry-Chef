@@ -205,6 +205,7 @@ export function LinkRow({ to, title, detail, right }: { to: string; title: React
 export const fmt = {
   kcal: (n: number) => `${Math.round(n).toLocaleString('en-AU')} kcal`,
   g: (n: number) => `${n < 10 ? Math.round(n * 10) / 10 : Math.round(n)} g`,
-  money: (cents: number) => `$${(cents / 100).toFixed(2)}`,
+  money: (cents: number) =>
+    `${cents < 0 ? '−' : ''}$${(Math.abs(cents) / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
   date: (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' }),
 }

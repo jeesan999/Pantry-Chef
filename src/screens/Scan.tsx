@@ -10,13 +10,14 @@ import { displayName, guessCategory, guessStorage } from '../lib/itemSearch'
 import { hashBlob, prepareReceiptImage } from '../receipts/image'
 import { recognise } from '../receipts/ocr'
 import { parseReceipt } from '../receipts/parse'
+import { tickFromReceipt } from '../lib/shopping'
 import { findDuplicate, saveReceipt, toCheckedLines, type CheckedLine, type CheckedReceipt, type Duplicate, type SaveResult } from '../receipts/save'
 
 type Stage =
   | { kind: 'start' }
   | { kind: 'reading'; step: string; fraction: number }
   | { kind: 'check'; receipt: CheckedReceipt; warnings: string[]; ocrConfidence: number }
-  | { kind: 'saved'; result: SaveResult; receipt: CheckedReceipt }
+  | { kind: 'saved'; result: SaveResult; receipt: CheckedReceipt; ticked: number }
 
 const STEP_LABEL: Record<string, string> = {
   'loading tesseract core': 'Starting the reader',
@@ -97,7 +98,7 @@ export default function ScanScreen() {
           warnings={stage.warnings}
           ocrConfidence={stage.ocrConfidence}
           onCancel={() => setStage({ kind: 'start' })}
-          onSaved={(result, receipt) => setStage({ kind: 'saved', result, receipt })}
+          onSaved={async (result, receipt) => setStage({ kind: 'saved', result, receipt, ticked: await tickFromReceipt(repo, result.receiptId).catch(() => 0) })}
         />
       )}
       {stage.kind === 'saved' && (
@@ -109,6 +110,11 @@ export default function ScanScreen() {
             Groceries {fmt.money(stage.result.groceriesCents)}{stage.result.householdCents ? ` · household ${fmt.money(stage.result.householdCents)}` : ''}
             {stage.result.newProducts ? ` · ${stage.result.newProducts} new item${stage.result.newProducts === 1 ? '' : 's'} remembered for next time` : ''}
           </p>
+          {stage.ticked > 0 && (
+            <p className="mt-1 text-sm text-leaf-700">
+              Ticked {stage.ticked} item{stage.ticked === 1 ? '' : 's'} on your <Link to="/shopping" className="font-medium underline">shopping list</Link>.
+            </p>
+          )}
           <div className="mt-4 grid grid-cols-2 gap-2">
             <Link to="/pantry"><Button className="w-full">Cook from your pantry</Button></Link>
             <Button variant="secondary" onClick={() => setStage({ kind: 'start' })}>Scan another</Button>

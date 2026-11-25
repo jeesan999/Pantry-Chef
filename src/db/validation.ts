@@ -62,6 +62,8 @@ export const SCHEMAS: Partial<Record<TableName, z.ZodType>> = {
     type: z.enum(['maintenance', 'recomp', 'fat_loss', 'weight_loss', 'muscle_gain', 'weight_gain']),
     energyAdjustPct: z.number().min(-20).max(15),
     startDate: date,
+    targetWeightKg: z.number().min(30).max(300).optional(),
+    targetWaistCm: z.number().min(40).max(200).optional(),
   }).loose(),
   training_schedule: z.object({
     id,
@@ -116,4 +118,42 @@ export const SCHEMAS: Partial<Record<TableName, z.ZodType>> = {
   weight_measurements: z.object({ id, profileId: id, date, weightKg: z.number().min(30).max(300) }).loose(),
   waist_measurements: z.object({ id, profileId: id, date, waistCm: z.number().min(40).max(200) }).loose(),
   planned_meals: z.object({ id, mealPlanId: id, date, time, recipeId: id, portionScale: z.number().positive().max(5) }).loose(),
+  // Receipt expenses may be negative after a big whole-receipt discount; manual ones are checked by addManualExpense.
+  expenses: z.object({ id, store: z.string().min(1), date, amountCents: z.number().int(), category: z.string().min(1) }).loose(),
+  shopping_lists: z.object({ id, name: z.string().min(1), from: date.optional(), to: date.optional() }).loose()
+    .refine((l) => !l.from || !l.to || l.from <= l.to, 'the list must end on or after its first day'),
+  shopping_list_items: z.object({
+    id,
+    listId: id,
+    productId: id,
+    quantity: z.number().positive(),
+    unit: qtyUnit,
+    estCostCents: z.number().int().min(0).optional(),
+    ticked: z.boolean(),
+    source: z.enum(['plan', 'extra']).optional(),
+  }).loose(),
+  meal_consumption: z.object({
+    id,
+    plannedMealId: id.optional(),
+    quick: z.object({ label: z.string().min(1), quantity: z.number().positive(), unit: qtyUnit, grams: nonNeg }).loose().optional(),
+    date,
+    time,
+    fractionEaten: z.number().min(0).max(1),
+    nutrition: nutrientsSchema,
+    costCents: nonNeg,
+    undone: z.boolean(),
+  }).loose().refine((c) => !!c.plannedMealId !== !!c.quick || (c.undone && !c.quick), 'a planned meal or a quick food, not both'),
+  recipe_ratings: z.object({
+    id,
+    recipeId: id,
+    stars: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).optional(),
+    flags: z.array(z.enum(['favourite', 'cook_again', 'do_not_recommend', 'too_expensive', 'too_slow', 'needs_flavour', 'too_repetitive'])),
+  }).loose(),
+  budgets: z.object({
+    id,
+    settingsId: id,
+    period: z.enum(['week', 'month']),
+    limitCents: z.number().int().positive(),
+    alertPct: z.number().int().min(1).max(100),
+  }).loose(),
 }
