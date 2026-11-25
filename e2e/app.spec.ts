@@ -359,6 +359,81 @@ test('Planner: draft, lock, swap, accept, undo; ratings keep a recipe out; Chef 
   await expect(page.getByText(/Re-portioned \d+ meals? for your new targets/)).toBeVisible()
 })
 
+test('Plan: 4-day view, generate, copy/change/clear/suggest a meal with undo, bulk prep, generate shopping list, edit the list', async ({ page }) => {
+  test.setTimeout(90_000)
+  await page.clock.setFixedTime(new Date('2026-11-26T07:00:00')) // Thursday morning
+  await approveTargets(page)
+  await page.goto('/#/plan')
+  await page.getByRole('radio', { name: '4 days' }).click()
+  await expect(page.locator('h1')).toHaveText('Next 4 days')
+  await expect(page.getByRole('group', { name: 'Day type' })).toHaveCount(4)
+  await page.getByRole('button', { name: 'Plan 4 days' }).click()
+  await expect(page.getByText(/^12 meals suggested/)).toBeVisible()
+  await page.getByRole('button', { name: 'Accept plan' }).click()
+  await expect(page.getByText(/Plan saved: 12 meals/)).toBeVisible()
+  const thuLunch = page.getByTestId('meal-2026-11-26|lunch')
+  await expect(thuLunch.getByText(/\d+ to buy|in pantry/)).toBeVisible()
+  await expect(page.getByLabel('Planned totals for Thu, 26 Nov')).toContainText('Protein')
+  await expect(page.getByText('From your pantry')).toBeVisible()
+
+  // copy Thursday's lunch to the other three days, then undo
+  const name = (await thuLunch.getByRole('link').textContent())!
+  await page.getByRole('button', { name: 'Options for Lunch on Thu, 26 Nov' }).click()
+  await page.getByRole('button', { name: 'Copy to other days' }).click()
+  await page.getByRole('button', { name: 'Copy to 3 days' }).click()
+  await expect(page.getByRole('status')).toContainText('Copied to 3 days')
+  await expect(page.getByTestId('meal-2026-11-29|lunch').getByRole('link')).toHaveText(name)
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(page.getByText('Change undone.')).toBeVisible()
+  await expect(page.getByTestId('meal-2026-11-29|lunch').getByRole('link')).not.toHaveText(name)
+
+  // change via the recipe browser: filters, missing ingredients shown before choosing
+  await page.getByRole('button', { name: 'Options for Dinner on Fri, 27 Nov' }).click()
+  await page.getByRole('button', { name: 'Change recipe' }).click()
+  await expect(page.getByText(/Still needed that day/)).toBeVisible()
+  await page.getByRole('radio', { name: 'All in pantry' }).click()
+  await expect(page.getByText(/^0 recipes/)).toBeVisible() // empty pantry
+  await page.getByRole('radio', { name: 'Needs shopping' }).click()
+  await page.getByLabel('Search recipes').fill('galbi')
+  await expect(page.getByText(/Missing: /).first()).toBeVisible()
+  await page.getByRole('button', { name: /^Choose Galbi/ }).first().click()
+  await expect(page.getByRole('status')).toContainText('Dinner on Fri, 27 Nov set.')
+  await expect(page.getByTestId('meal-2026-11-27|dinner').getByRole('link')).toContainText(/Galbi/)
+
+  // leave a meal unplanned, then ask for a suggestion
+  await page.getByRole('button', { name: 'Options for Smoko on Sat, 28 Nov' }).click()
+  await page.getByRole('button', { name: 'Leave unplanned' }).click()
+  await expect(page.getByTestId('meal-2026-11-28|smoko')).toContainText('Not planned')
+  await page.getByRole('button', { name: 'Suggest Smoko on Sat, 28 Nov' }).click()
+  await expect(page.getByTestId('meal-2026-11-28|smoko').getByRole('link')).toBeVisible()
+
+  // bulk prep: combined ingredients, cook schedule, list for those meals
+  await page.getByRole('button', { name: 'Bulk prep' }).click()
+  await expect(page.getByRole('heading', { name: 'Ingredients, combined' })).toBeVisible()
+  await expect(page.getByText(/servings? for/).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Shopping list for these meals' }).click()
+  await expect(page).toHaveURL(/#\/shopping/)
+  await expect(page.getByRole('status')).toContainText(/Built from \d+ planned meals?/)
+
+  // weekly list from the plan, then edit it
+  await page.goto('/#/plan')
+  await page.getByRole('button', { name: 'Generate shopping list' }).click()
+  await expect(page.getByRole('status')).toContainText(/Built from 12 planned meals and 4 breakfasts/)
+  const first = page.getByRole('button', { name: /^Change amount of / }).first()
+  const item = (await first.getAttribute('aria-label'))!.replace('Change amount of ', '')
+  await first.click()
+  await page.getByLabel(/^Amount/).fill('999')
+  await page.getByRole('button', { name: 'Save amount' }).click()
+  await expect(page.getByText('amount changed by you')).toBeVisible()
+  await page.getByRole('button', { name: `Remove ${item}` }).click()
+  await expect(page.getByText(/1 plan item removed by you/)).toBeVisible()
+  await page.getByRole('button', { name: 'Put back' }).click()
+  await expect(page.getByRole('button', { name: `Remove ${item}` })).toBeVisible()
+  // nothing was taken from the pantry
+  await page.goto('/#/pantry')
+  await expect(page.getByText(/Used -/)).toHaveCount(0)
+})
+
 test('Eating: half a lunch from the pantry with leftover waste, undo, a snack, yesterday’s breakfast, Chef “I had a banana”', async ({ page }) => {
   test.setTimeout(120_000)
   await page.clock.setFixedTime(new Date('2026-11-26T15:00:00'))

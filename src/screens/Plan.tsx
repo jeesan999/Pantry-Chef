@@ -8,11 +8,27 @@ import { SLOTS } from '../engines/contract'
 import { addDays } from '../engines/nutrition/engine'
 import type { PlanSlot } from '../engines/planner/engine'
 import { SLOT_LABEL, targetsForDate, weekDates } from '../lib/day'
+import { daySummaries } from '../lib/planOps'
 import { useApprovedTargets, useDayChoices } from '../lib/hooks'
 import { acceptDraft, buildDraft, slotKey, type Draft, type DraftParams } from '../lib/planner'
 import { currentList, generateList } from '../lib/shopping'
 import { on } from '../lib/events'
 import { StaleTargets } from './plan/StaleTargets'
+import { DayPlan, type Undoable } from './plan/DayCard'
+import { PlanTools } from './plan/PlanTools'
+
+type View = 'four' | 'week'
+const VIEW_KEY = 'plan-view'
+const loadView = (): View => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'four' ? 'four' : 'week'
+  } catch {
+    return 'week'
+  }
+}
+// the last single-meal change, kept outside the component so Undo survives switching screens
+let lastChange: Undoable | null = null
+on('data-replaced', () => { lastChange = null })
 
 const STORE = 'plan-draft'
 const nowHHMM = () => {
@@ -46,13 +62,27 @@ export default function PlanScreen() {
     const p = loadParams()
     return p ? Math.max(0, Math.round((Date.parse(p.to) - Date.parse(now)) / 6048e5 - 0.5)) : 0
   })
-  const dates = weekDates(addDays(now, offset * 7))
+  const [view, setViewState] = useState<View>(() => (loadParams() ? 'week' : loadView()))
+  const setView = (v: View) => {
+    try { localStorage.setItem(VIEW_KEY, v) } catch { /* not remembered */ }
+    setViewState(v)
+  }
+  const dates = view === 'four' ? Array.from({ length: 4 }, (_, i) => addDays(now, i)) : weekDates(addDays(now, offset * 7))
+  const last = dates[dates.length - 1]
   const approved = useApprovedTargets()
   const choices = useDayChoices(dates)
-  const planned = useLiveQuery(() => db.planned_meals.where('date').between(dates[0], dates[6], true, true).toArray(), [dates[0]])
+  const planned = useLiveQuery(() => db.planned_meals.where('date').between(dates[0], last, true, true).toArray(), [dates[0], last])
   const recipes = useLiveQuery(() => db.recipes.toArray())
   const rname = new Map((recipes ?? []).map((r) => [r.id, r.name]))
   const nTrain = choices?.filter((c) => c.dayType === 'training').length
+  const summaries = useLiveQuery(async () => {
+    if (!approved) return null
+    // re-run when meals, the pantry, prices or day types change
+    await Promise.all([db.planned_meals.count(), db.inventory_lots.count(), db.price_history.count(), db.meal_consumption.count()])
+    return new Map((await daySummaries(repo, dates)).map((d) => [d.date, d]))
+  }, [dates.join(), approved?.id, JSON.stringify(planned?.map((p) => [p.id, p.recipeId, p.portionScale, p.substitutions])), JSON.stringify(choices?.map((c) => c.dayType))])
+  const [change, setChangeState] = useState<Undoable | null>(lastChange)
+  const setChange = (u: Undoable | null) => { lastChange = u; setChangeState(u) }
 
   const [params, setParamsState] = useState<DraftParams | null>(loadParams)
   const setParams = (p: DraftParams | null) => {
@@ -78,10 +108,11 @@ export default function PlanScreen() {
   const draft = draftQ?.draft ?? null
 
   const weekFrom = dates[0] < now ? now : dates[0]
-  const weekOver = dates[6] < now
+  const weekOver = last < now
   const start = (m: DraftParams['mode'], seed = 0) => {
     setMsg(null)
-    setParams({ from: weekFrom, to: dates[6], mode: m, seed, locks: [], skips: [], exclude: {} })
+    setChange(null)
+    setParams({ from: weekFrom, to: last, mode: m, seed, locks: [], skips: [], exclude: {} })
   }
   const edit = (fn: (p: DraftParams) => DraftParams) => params && setParams(fn(params))
 
@@ -136,15 +167,21 @@ export default function PlanScreen() {
 
   return (
     <Page
-      title={offset === 0 ? 'This week' : offset === 1 ? 'Next week' : 'Week'}
-      subtitle={`${fmt.date(dates[0])} – ${fmt.date(dates[6])}${nTrain === undefined ? '' : ` · ${nTrain} training, ${7 - nTrain} rest`}`}
-      action={
+      title={view === 'four' ? 'Next 4 days' : offset === 0 ? 'This week' : offset === 1 ? 'Next week' : 'Week'}
+      subtitle={`${fmt.date(dates[0])} – ${fmt.date(last)}${nTrain === undefined ? '' : ` · ${nTrain} training, ${dates.length - nTrain} rest`}`}
+      action={view === 'four' ? undefined : (
         <div className="flex gap-1">
           <Button variant="secondary" aria-label="Previous week" disabled={offset <= 0} onClick={() => setOffset(offset - 1)}>‹</Button>
           <Button variant="secondary" aria-label="Next week" onClick={() => setOffset(offset + 1)}>›</Button>
         </div>
-      }
+      )}
     >
+      <div role="radiogroup" aria-label="Plan view" className="grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1 text-sm">
+        {([['four', '4 days'], ['week', 'Week']] as Array<[View, string]>).map(([v, l]) => (
+          <button key={v} type="button" role="radio" aria-checked={view === v} disabled={!!params} onClick={() => setView(v)}
+            className={cx('min-h-9 rounded-lg font-medium transition disabled:opacity-60', view === v ? 'bg-white text-leaf-700 shadow-card' : 'text-stone-600')}>{l}</button>
+        ))}
+      </div>
       <StaleTargets />
       {!approved && (
         <Card><Link to="/goals"><Button>Review targets first</Button></Link></Card>
@@ -158,9 +195,10 @@ export default function PlanScreen() {
               <option value="empty">Fill empty meals</option>
               <option value="unlocked">Replan every meal</option>
             </Select>
-            <Button onClick={() => start(mode)}>{offset === 0 ? 'Plan this week' : offset === 1 ? 'Plan next week' : 'Plan this week'}</Button>
+            <Button onClick={() => start(mode)}>{view === 'four' ? 'Plan 4 days' : offset === 1 ? 'Plan next week' : 'Plan this week'}</Button>
           </div>
-          {offset === 0 && <p className="mt-2 text-xs text-stone-500">Plans from now to Sunday; meals already past are left alone.</p>}
+          {view === 'week' && offset === 0 && <p className="mt-2 text-xs text-stone-500">Plans from now to Sunday; meals already past are left alone.</p>}
+          {view === 'four' && <p className="mt-2 text-xs text-stone-500">Plans today and the next three days; meals already past are left alone.</p>}
         </Card>
       )}
 
@@ -174,6 +212,17 @@ export default function PlanScreen() {
         </Notice>
       )}
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      {change && !params && (
+        <Notice tone="leaf">
+          <span className="flex flex-wrap items-center justify-between gap-2" role="status">
+            {change.text}
+            <span className="flex gap-1">
+              {change.undo && <Button variant="secondary" className="min-h-9" onClick={async () => { const u = change.undo!; setChange(null); await u(); setMsg({ tone: 'leaf', text: 'Change undone.' }) }}>Undo</Button>}
+              <Button variant="ghost" className="min-h-9" aria-label="Dismiss" onClick={() => setChange(null)}>✕</Button>
+            </span>
+          </span>
+        </Notice>
+      )}
       {draftQ?.error && <Notice tone="red">{draftQ.error} <button type="button" className="underline" onClick={() => setParams(null)}>Close the draft</button></Notice>}
 
       {draft && <WeekSummary draft={draft} busy={busy} onAccept={accept} onDiscard={() => setParams(null)} onAnother={() => edit((p) => ({ ...p, seed: p.seed + 1 }))} />}
@@ -193,6 +242,9 @@ export default function PlanScreen() {
                   {fmt.kcal(t.energyKcal)} · {t.proteinG.preferred} g protein · {t.carbsG} g carbs · {t.fatG} g fat
                   {t.workout && <> · training {t.workout.start}</>}
                 </p>
+                {!inDraft(d) && summaries?.get(d) ? (
+                  <div className="mt-2"><DayPlan day={summaries.get(d)!} dates={dates} today={now} now={nowHHMM()} onDone={(u) => { setMsg(null); lastAccepted = null; setChange(u) }} /></div>
+                ) : (
                 <ul className="mt-2 divide-y divide-stone-50 text-sm">
                   {SLOTS.map((s) => {
                     const k = slotKey({ date: d, slot: s })
@@ -243,6 +295,7 @@ export default function PlanScreen() {
                     )
                   })}
                 </ul>
+                )}
                 {check && (
                   <div className="tabular mt-2 rounded-xl bg-stone-50 px-3 py-2 text-xs text-stone-600">
                     Day: {Math.round(check.totals.energyKcal).toLocaleString('en-AU')} / {check.target.energyKcal.toLocaleString('en-AU')} kcal · P {Math.round(check.totals.proteinG)}/{check.target.proteinG} · C {Math.round(check.totals.carbsG)}/{check.target.carbsG} · F {Math.round(check.totals.fatG)}/{check.target.fatG} g
@@ -254,9 +307,10 @@ export default function PlanScreen() {
           </Card>
         )
       })}
+      {approved && !params && summaries && <PlanTools range={{ from: weekFrom > last ? dates[0] : weekFrom, to: last }} days={dates.map((d) => summaries.get(d)!).filter((d) => d && d.date >= weekFrom)} today={now} />}
       <Card>
         <Link to="/shopping" className="flex min-h-11 items-center justify-between font-medium text-leaf-700">
-          Shopping list for these meals <span aria-hidden>›</span>
+          Open the shopping list <span aria-hidden>›</span>
         </Link>
       </Card>
     </Page>

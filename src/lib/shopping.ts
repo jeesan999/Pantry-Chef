@@ -4,8 +4,8 @@ import { FIXED_BREAKFAST_ID } from '../db/seed'
 import type { Product, QtyUnit, Recipe, RecipeIngredient, ShoppingList, ShoppingListItem } from '../db/types'
 import { costOf } from '../engines/cost/engine'
 import { addDays, mondayOf } from '../engines/nutrition/engine'
-import { buildShoppingNeeds, type MealToShopFor } from '../engines/shopping/engine'
-import { loadCostContext } from './expenses'
+import { buildShoppingNeeds, type MealToShopFor, type ShoppingNeed } from '../engines/shopping/engine'
+import { loadCostContext, type CostContext } from './expenses'
 import { loadMealContext, mealIngredients, type MealContext } from './meals'
 import { guessCategory, guessStorage } from './itemSearch'
 
@@ -27,14 +27,14 @@ export function datesBetween(r: ListRange): string[] {
 }
 
 /** Planned meals in the range, plus the fixed breakfast every day. */
-export async function mealsInRange(repo: Repo, r: ListRange): Promise<Array<MealToShopFor & { substitutions?: Record<string, string> }>> {
+export async function mealsInRange(repo: Repo, r: ListRange): Promise<Array<MealToShopFor & { substitutions?: Record<string, string>; mealId?: string }>> {
   const planned = await repo.db.planned_meals.where('date').between(r.from, r.to, true, true).toArray()
   const hasBreakfast = !!(await repo.db.recipes.get(FIXED_BREAKFAST_ID))
   // a day whose breakfast was logged already has a breakfast row: don't count it twice
   const breakfastRow = new Set(planned.filter((p) => p.slot === 'breakfast').map((p) => p.date))
   return [
     ...(hasBreakfast ? datesBetween(r).filter((date) => !breakfastRow.has(date)).map((date) => ({ date, recipeId: FIXED_BREAKFAST_ID, portionScale: 1 })) : []),
-    ...planned.map((p) => ({ date: p.date, recipeId: p.recipeId, portionScale: p.portionScale, substitutions: p.substitutions })),
+    ...planned.map((p) => ({ date: p.date, recipeId: p.recipeId, portionScale: p.portionScale, substitutions: p.substitutions, mealId: p.id })),
   ]
 }
 
@@ -70,31 +70,44 @@ export interface GenerateResult { listId: string; toBuy: number; covered: string
  * same item is still needed. Extras are never touched. Foods never bought get a product so the list
  * can name them, as Pantry's manual add does.
  */
-export async function generateList(repo: Repo, r: ListRange, listId?: string): Promise<GenerateResult> {
+/**
+ * Everything the meals in a range need, combined across recipes and days, minus pantry stock usable on
+ * each meal's day, priced from your own prices. Shared by the shopping list, bulk prep and plan costs.
+ */
+export async function shoppingNeedsFor(repo: Repo, r: ListRange, mealIds?: string[], pre?: CostContext): Promise<{ needs: ShoppingNeed[]; meals: MealToShopFor[] }> {
+  const ctx = pre ?? (await loadCostContext(repo))
+  const [planMeals, allRecipes, allIngredients, yields, lots, mctx] = await Promise.all([
+    mealsInRange(repo, r),
+    repo.db.recipes.toArray(),
+    repo.db.recipe_ingredients.toArray(),
+    repo.db.cooking_yields.toArray(),
+    repo.db.inventory_lots.toArray(),
+    loadMealContext(repo),
+  ])
+  // bulk prep: only the chosen meals (breakfast included only when chosen)
+  const chosen = mealIds ? new Set(mealIds) : null
+  const inScope = chosen ? planMeals.filter((m) => m.mealId && chosen.has(m.mealId)) : planMeals
+  const { meals, recipes, ingredients } = withSubstitutions(inScope, allRecipes, allIngredients, mctx)
+  const needs = buildShoppingNeeds({
+    meals,
+    recipes: new Map(recipes.map((x) => [x.id, x])),
+    ingredients,
+    foods: ctx.foods,
+    yields,
+    products: [...ctx.products.values()],
+    lots,
+    prices: ctx.prices,
+  })
+  return { needs, meals }
+}
+
+export async function generateList(repo: Repo, r: ListRange, listId?: string, opts: { mealIds?: string[] } = {}): Promise<GenerateResult> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(r.from) || !/^\d{4}-\d{2}-\d{2}$/.test(r.to)) throw new IntegrityError('Choose the first and last day.')
   if (r.from > r.to) throw new IntegrityError('The last day must be on or after the first day.')
   if (datesBetween(r).length > 31) throw new IntegrityError('Choose up to 31 days.')
-  const ctx = await loadCostContext(repo)
+  const pre = await loadCostContext(repo)
   return repo.tx(async () => {
-    const [planMeals, allRecipes, allIngredients, yields, lots, mctx] = await Promise.all([
-      mealsInRange(repo, r),
-      repo.db.recipes.toArray(),
-      repo.db.recipe_ingredients.toArray(),
-      repo.db.cooking_yields.toArray(),
-      repo.db.inventory_lots.toArray(),
-      loadMealContext(repo),
-    ])
-    const { meals, recipes, ingredients } = withSubstitutions(planMeals, allRecipes, allIngredients, mctx)
-    const needs = buildShoppingNeeds({
-      meals,
-      recipes: new Map(recipes.map((x) => [x.id, x])),
-      ingredients,
-      foods: ctx.foods,
-      yields,
-      products: [...ctx.products.values()],
-      lots,
-      prices: ctx.prices,
-    })
+    const { needs, meals } = await shoppingNeedsFor(repo, r, opts.mealIds, pre)
 
     const now = nowIso()
     const plan = await repo.db.meal_plans.where('weekStart').equals(mondayOf(r.from)).first()
@@ -111,6 +124,7 @@ export async function generateList(repo: Repo, r: ListRange, listId?: string): P
     const byKey = new Map(existing.map((i) => [`${i.productId}|${i.unit}`, i]))
     const keep = new Set<string>()
     let toBuy = 0
+    const removed = new Set(list.removedKeys ?? [])
     for (const n of needs) {
       if (n.buyQty <= 0) continue
       let productId = n.productId
@@ -131,8 +145,14 @@ export async function generateList(repo: Repo, r: ListRange, listId?: string): P
         recipes: n.recipes,
         source: 'plan' as const,
       }
+      if (removed.has(`${productId}|${n.unit}`)) continue
       const prev = byKey.get(`${productId}|${n.unit}`)
-      if (prev) {
+      if (prev?.quantityEdited) {
+        // keep the amount you set; scale the estimate to it
+        const est = n.costCents !== null && n.buyQty > 0 ? Math.round((n.costCents * prev.quantity) / n.buyQty) : undefined
+        await repo.update('shopping_list_items', prev.id, { ...fields, quantity: prev.quantity, estCostCents: est })
+        keep.add(prev.id)
+      } else if (prev) {
         await repo.update('shopping_list_items', prev.id, fields)
         keep.add(prev.id)
       } else {
@@ -192,7 +212,38 @@ export async function clearTicked(repo: Repo, listId: string): Promise<number> {
   })
 }
 
-export const removeItem = (repo: Repo, itemId: string) => repo.remove('shopping_list_items', itemId)
+/** Remove an item; a plan item is remembered as removed so updating the list doesn't add it back. */
+export async function removeItem(repo: Repo, itemId: string): Promise<void> {
+  await repo.tx(async () => {
+    const it = await repo.get('shopping_list_items', itemId)
+    if (!it) return
+    if (it.source !== 'extra') {
+      const list = await repo.get('shopping_lists', it.listId)
+      if (list) await repo.update('shopping_lists', list.id, { removedKeys: [...new Set([...(list.removedKeys ?? []), `${it.productId}|${it.unit}`])] })
+    }
+    await repo.remove('shopping_list_items', itemId)
+  })
+}
+
+/** Change how much to buy; the estimate follows and updating the list keeps your amount. */
+export async function setItemQuantity(repo: Repo, itemId: string, quantity: number): Promise<void> {
+  if (!(quantity > 0)) throw new IntegrityError('Enter an amount above zero.')
+  const it = await repo.get('shopping_list_items', itemId)
+  if (!it) return
+  const est = it.estCostCents !== undefined && it.quantity > 0 ? Math.round((it.estCostCents * quantity) / it.quantity) : undefined
+  await repo.update('shopping_list_items', itemId, { quantity, estCostCents: est, quantityEdited: true })
+}
+
+/** Bring back plan items you removed (on the next update). */
+export async function restoreRemoved(repo: Repo, listId: string): Promise<void> {
+  await repo.update('shopping_lists', listId, { removedKeys: [] })
+}
+
+/** Packs to buy when the product's pack size is known: "need 1.2 kg -> 2 x 600 g". */
+export function packsFor(quantity: number, unit: QtyUnit, product?: Pick<Product, 'packSize' | 'packUnit'>): { packs: number; size: number } | null {
+  if (!product?.packSize || !(product.packSize > 0) || (product.packUnit && product.packUnit !== unit)) return null
+  return { packs: Math.max(1, Math.ceil(quantity / product.packSize - 1e-9)), size: product.packSize }
+}
 export const deleteList = (repo: Repo, listId: string) => repo.remove('shopping_lists', listId)
 
 /** After a receipt is saved: tick the open items it bought (same product, or a product of the same food). Returns how many. */
