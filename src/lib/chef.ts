@@ -18,6 +18,7 @@ import { budgetStatuses } from './expenses'
 import { exportBackup } from './backup'
 import { loadProgress } from './progress'
 import { FLAG_LABEL, allRatings, rate, restoreRating } from './ratings'
+import { loadMealContext, mealNutrition } from './meals'
 import { acceptDraft, buildDraft } from './planner'
 import { eatMeal, eatQuick, eatenFor, ensureBreakfast, loadDay, previewMeal, previewQuick, undoEaten, type QuickChoice } from './eating'
 import { fmtRate, hasRate } from '../engines/progress/engine'
@@ -296,9 +297,10 @@ async function nutritionLeft(deps: ChefDeps, date: string): Promise<Reply> {
   let sum = emptyNutrients()
   const fb = nutrition.get(FIXED_BREAKFAST_ID)
   if (fb) sum = addNutrients(sum, fb.perServing)
+  const mctx = await loadMealContext(deps.repo)
   for (const p of planned) {
-    const n = nutrition.get(p.recipeId)
-    if (n) sum = addNutrients(sum, n.perServing, p.portionScale)
+    if (p.slot === 'breakfast') continue // counted above as the fixed breakfast
+    if (nutrition.get(p.recipeId)) sum = addNutrients(sum, mealNutrition(mctx, p).n) // swaps included
   }
   const d = t.day
   const log = await loadDay(deps.repo, date)

@@ -362,6 +362,7 @@ export interface PlannedMeal {
   time: string
   recipeId: Id
   portionScale: number
+  substitutions?: Record<Id, Id> // recipe ingredient id -> food id used instead (weight for weight)
 }
 
 /** Something eaten: a planned meal (fraction 0 = skipped) or a quick food. Frozen when logged. */

@@ -511,6 +511,57 @@ test('Appearance: theme and night mode persist across reloads; system mode follo
   await expect(html).toHaveAttribute('data-mode', 'light')
 })
 
+test('Suggestions and pantry check: suggested lunch, use it, missing ingredients highlighted, add to list; nothing deducted', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.clock.setFixedTime(new Date('2026-11-26T12:30:00'))
+  await approveTargets(page)
+  await page.goto('/#/scan')
+  await page.getByLabel('Choose a receipt photo').setInputFiles('e2e/fixtures/test-receipt-woolworths.jpg')
+  await expect(page.getByText('Check the receipt')).toBeVisible({ timeout: 90_000 })
+  await page.getByRole('button', { name: 'Save to pantry and expenses' }).click()
+  await expect(page.getByText(/items added to your pantry/)).toBeVisible()
+  const stock = async () => page.evaluate(async () => {
+    const db: IDBDatabase = await new Promise((ok) => { const r = indexedDB.open('personal-chef'); r.onsuccess = () => ok(r.result) })
+    const rows: Array<{ id: string; remaining: number }> = await new Promise((ok) => { const q = db.transaction('inventory_lots').objectStore('inventory_lots').getAll(); q.onsuccess = () => ok(q.result) })
+    db.close()
+    return JSON.stringify(rows.map((r) => [r.id, r.remaining]).sort())
+  })
+  const before = await stock()
+
+  await page.goto('/#/')
+  const card = page.locator('section', { has: page.getByRole('heading', { name: 'Suggested for lunch' }) })
+  await expect(card.getByText(/Still needed today:/)).toBeVisible()
+  await expect(card.getByRole('button')).toHaveCount(3)
+  await expect(card.getByText(/All in pantry|\d+ to buy/).first()).toBeVisible()
+  const name = (await card.getByRole('button').first().locator('span.truncate').textContent())!
+  await card.getByRole('button').first().click()
+  const sheet = page.getByRole('dialog')
+  await expect(sheet.getByRole('columnheader', { name: 'Pantry' })).toBeVisible()
+  await sheet.getByRole('button', { name: 'Use for lunch' }).click()
+  await expect(page.locator('section', { has: page.getByText('Lunch', { exact: true }) }).getByText(name)).toBeVisible()
+
+  // the lunch card's pantry chip opens the ingredient check; add what's missing to the list
+  await page.getByRole('button', { name: `Pantry check for ${name}` }).click()
+  const missing = sheet.getByText('Missing', { exact: true })
+  if (await missing.count()) {
+    await expect(missing.first()).toBeVisible()
+    await sheet.getByRole('button', { name: /^Add \d+ missing to shopping list$/ }).click()
+    await expect(sheet.getByText(/^Added \d+ items? to your shopping list\.$/)).toBeVisible()
+  }
+  await page.keyboard.press('Escape')
+
+  // the recipe page shows the same check
+  await page.goto('/#/recipes/recipe:au-chicken-rice-bowl')
+  const row = (n: string) => page.getByRole('row', { name: new RegExp(`^(available|partly available|missing) ${n}`) })
+  await expect(row('Chicken breast')).toContainText('Available')
+  await expect(row('Broccoli')).toContainText('Missing')
+  await page.getByRole('link', { name: 'Show recipes I can make now' }).click()
+  await expect(page.getByRole('checkbox', { name: /Can make now/ })).toBeChecked()
+
+  // looking, suggesting and adding to a list took nothing from the pantry
+  expect(await stock()).toBe(before)
+})
+
 async function tellChef(page: Page, text: string) {
   await page.getByLabel('Message Chef').fill(text)
   await page.getByLabel('Message Chef').press('Enter')

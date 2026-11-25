@@ -17,8 +17,11 @@ import { budgetStatuses } from '../lib/expenses'
 import { BudgetAlerts } from './expenses/BudgetAlerts'
 import { StaleTargets } from './plan/StaleTargets'
 import { EatBar, SnacksCard } from './today/Eating'
+import { SuggestCard } from './today/Suggest'
+import { MealPantryChip } from './today/MealPantryChip'
 import { BackupReminder } from './today/BackupReminder'
 import { MAX_DAYS_BACK, loadDay } from '../lib/eating'
+import { loadMealContext, mealNutrition } from '../lib/meals'
 import { addDays as addDaysTo } from '../engines/nutrition/engine'
 
 export default function TodayScreen() {
@@ -29,6 +32,13 @@ export default function TodayScreen() {
   const approved = useApprovedTargets()
   const profile = useProfile()
   const nutrition = useAllRecipeNutrition()
+  const mctx = useLiveQuery(() => loadMealContext(repo))
+  // a planned meal's nutrition, with any ingredient swaps
+  const mealPer = (m: { recipe?: Recipe; scale: number; planned?: PlannedMeal }) => {
+    if (m.planned?.substitutions && Object.keys(m.planned.substitutions).length && mctx) return mealNutrition(mctx, m.planned).n
+    const n = m.recipe && nutrition?.get(m.recipe.id)
+    return n ? scaleNutrients(n.perServing, m.scale) : null
+  }
   const recipes = useLiveQuery(() => db.recipes.toArray())
   const planned = useLiveQuery(() => db.planned_meals.where('date').equals(date).toArray(), [date])
   const [picking, setPicking] = useState<SlotName | null>(null)
@@ -49,7 +59,8 @@ export default function TodayScreen() {
   const plannedTotals = SLOTS.reduce((acc, slot) => {
     const m = mealFor(slot)
     const n = m.recipe && nutrition?.get(m.recipe.id)
-    return n ? addNutrients(acc, n.perServing, m.scale) : acc
+    const per = n ? mealPer(m) : null
+    return per ? addNutrients(acc, per) : acc
   }, emptyNutrients())
   const anyLogged = !!log && log.logged.size + log.quick.length > 0
   const shown = view ?? (anyLogged ? 'eaten' : 'planned')
@@ -127,11 +138,13 @@ export default function TodayScreen() {
             </div>
           </Card>
 
+          {date === now && <SuggestCard />}
+
           {SLOTS.map((slot) => {
             const st = day.slots[slot]
             const m = mealFor(slot)
             const n = m.recipe ? nutrition.get(m.recipe.id) : undefined
-            const per = n ? scaleNutrients(n.perServing, m.scale) : null
+            const per = n ? mealPer(m) : null
             return (
               <Card key={slot} className="p-0 overflow-hidden">
                 <div className="flex items-center justify-between px-4 pt-3">
@@ -161,6 +174,9 @@ export default function TodayScreen() {
                   </Link>
                 ) : (
                   <p className="px-4 py-4 text-sm text-stone-500">Nothing chosen yet.</p>
+                )}
+                {m.recipe && !(m.planned && log?.logged.has(m.planned.id)) && (
+                  <div className="px-4 pb-1"><MealPantryChip recipeId={m.recipe.id} recipeName={m.recipe.name} portionScale={m.scale} date={date} planned={m.planned} /></div>
                 )}
                 <EatBar date={date} slot={slot} planned={m.planned} logged={m.planned ? log?.logged.get(m.planned.id) : undefined} recipeName={m.recipe?.name} />
                 <div className="space-y-1.5 border-t border-stone-100 bg-stone-50/60 px-4 py-3">

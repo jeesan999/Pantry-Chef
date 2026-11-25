@@ -4,7 +4,7 @@
  */
 import { IntegrityError, type Repo } from '../db/repo'
 import { FIXED_BREAKFAST_ID } from '../db/seed'
-import type { Food, PlannedMeal } from '../db/types'
+import type { Food, Nutrients, PlannedMeal } from '../db/types'
 import { CONTRACT_VERSION, type DayTargets } from '../engines/contract'
 import { addDays, mondayOf } from '../engines/nutrition/engine'
 import { approvedTargets } from '../engines/nutrition/service'
@@ -14,6 +14,8 @@ import { loadCostContext, recipeServingCosts } from './expenses'
 import { displayName } from './itemSearch'
 import { ingredientGrams, portionForProtein } from './nutrition'
 import { loadRecipeNutrition } from './rank'
+import { loadMealContext, mealIngredients, mealNutrition } from './meals'
+import { addNutrients, emptyNutrients } from './nutrition'
 import { allRatings } from './ratings'
 import { dayChoices } from './schedule'
 import { datesBetween } from './shopping'
@@ -90,6 +92,7 @@ export async function buildDraft(repo: Repo, params: DraftParams, today: string,
         perServing: nutrition.get(r.id)!.perServing,
         ingredients: gramsPerServing(byRecipe.get(r.id) ?? [], r.servings, foodMap, yields),
         costPerServing: c && c.coveredPct === 100 ? c.cents : null,
+        totalMin: r.prepMin + r.cookMin,
       }
     })
 
@@ -113,7 +116,9 @@ export async function buildDraft(repo: Repo, params: DraftParams, today: string,
   const past = new Set<string>()
   for (const date of dates) for (const s of PLAN_SLOTS) if (date === today && now && days[date].slots[s].time <= now) past.add(slotKey({ date, slot: s }))
   // meals already logged (eaten or skipped) are fixed, whatever the time
-  const logged = new Set((await repo.db.meal_consumption.where('date').between(dates[0], dates[dates.length - 1], true, true).toArray()).filter((c) => !c.undone && c.plannedMealId).map((c) => c.plannedMealId!))
+  const logs = (await repo.db.meal_consumption.where('date').between(dates[0], dates[dates.length - 1], true, true).toArray()).filter((c) => !c.undone)
+  const logOf = new Map(logs.filter((c) => c.plannedMealId).map((c) => [c.plannedMealId!, c]))
+  const logged = new Set(logOf.keys())
   for (const p of planned) if (logged.has(p.id) && p.slot !== 'breakfast') past.add(slotKey({ date: p.date, slot: p.slot }))
   const lockKeys = new Set(params.locks.map(slotKey))
   const skipKeys = new Set(params.skips)
@@ -124,14 +129,42 @@ export async function buildDraft(repo: Repo, params: DraftParams, today: string,
   const fixedKeys = new Set(locked.map(slotKey))
   const fill = dates.flatMap((date) => PLAN_SLOTS.map((slot) => ({ date, slot }))).filter((f) => !fixedKeys.has(slotKey(f)) && !skipKeys.has(slotKey(f)) && !past.has(slotKey(f)))
 
+  // What the planner judges the day by: logged meals at the share eaten (skipped = nothing), meals with
+  // swaps as their own recipe, quick foods and part-eaten breakfasts as extra intake for the day.
+  const mctx = await loadMealContext(repo)
+  const plannerById = new Map(plannerRecipes.map((r) => [r.id, r]))
+  const extraRecipes: PlannerRecipe[] = []
+  const plannerLocked = locked.flatMap((m) => {
+    const row = planned.find((p) => p.date === m.date && p.slot === m.slot && p.recipeId === m.recipeId)
+    const c = row ? logOf.get(row.id) : undefined
+    const scale = c ? m.portionScale * c.fractionEaten : m.portionScale
+    if (scale <= 0) return []
+    if (row?.substitutions && Object.keys(row.substitutions).length && plannerById.get(m.recipeId)) {
+      const id = `${m.recipeId}~${row.id}`
+      const base = plannerById.get(m.recipeId)!
+      const servings = mctx.servings.get(m.recipeId) ?? 1
+      extraRecipes.push({ ...base, id, perServing: mealNutrition(mctx, { recipeId: m.recipeId, portionScale: 1, substitutions: row.substitutions }).n, ingredients: gramsPerServing(mealIngredients(mctx, row), servings, foodMap, yields) })
+      return [{ ...m, recipeId: id, portionScale: scale }]
+    }
+    return [{ ...m, portionScale: scale }]
+  })
+  const extra: Record<string, Nutrients> = {}
+  const add = (date: string, n: Nutrients, k = 1) => { extra[date] = addNutrients(extra[date] ?? emptyNutrients(), n, k) }
+  for (const c of logs) {
+    if (c.quick) add(c.date, c.nutrition)
+    const row = c.plannedMealId ? planned.find((p) => p.id === c.plannedMealId) : undefined
+    if (row?.slot === 'breakfast' && breakfast && c.fractionEaten < 1) add(c.date, breakfast.perDay, -(1 - c.fractionEaten))
+  }
+
   const input: PlanInput = {
     dates,
     days,
-    recipes: plannerRecipes,
+    recipes: [...plannerRecipes, ...extraRecipes],
     breakfast,
     stock,
     ratings: new Map([...ratings].map(([k, v]) => [k, { stars: v.stars, flags: v.flags }])),
-    locked,
+    locked: plannerLocked,
+    extra,
     fill,
     recent: recentRows.map((r) => ({ date: r.date, recipeId: r.recipeId })),
     foodNames: new Map(foods.map((f) => [f.id, displayName(f.name)])),

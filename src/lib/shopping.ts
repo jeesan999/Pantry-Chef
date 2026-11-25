@@ -1,11 +1,12 @@
 /** Database side of the shopping list: builds it from planned meals, keeps ticks and extras, ticks off what a receipt bought. */
 import { IntegrityError, newId, nowIso, type Repo } from '../db/repo'
 import { FIXED_BREAKFAST_ID } from '../db/seed'
-import type { Product, QtyUnit, ShoppingList, ShoppingListItem } from '../db/types'
+import type { Product, QtyUnit, Recipe, RecipeIngredient, ShoppingList, ShoppingListItem } from '../db/types'
 import { costOf } from '../engines/cost/engine'
 import { addDays, mondayOf } from '../engines/nutrition/engine'
 import { buildShoppingNeeds, type MealToShopFor } from '../engines/shopping/engine'
 import { loadCostContext } from './expenses'
+import { loadMealContext, mealIngredients, type MealContext } from './meals'
 import { guessCategory, guessStorage } from './itemSearch'
 
 export interface ListRange { from: string; to: string }
@@ -26,13 +27,34 @@ export function datesBetween(r: ListRange): string[] {
 }
 
 /** Planned meals in the range, plus the fixed breakfast every day. */
-export async function mealsInRange(repo: Repo, r: ListRange): Promise<MealToShopFor[]> {
+export async function mealsInRange(repo: Repo, r: ListRange): Promise<Array<MealToShopFor & { substitutions?: Record<string, string> }>> {
   const planned = await repo.db.planned_meals.where('date').between(r.from, r.to, true, true).toArray()
   const hasBreakfast = !!(await repo.db.recipes.get(FIXED_BREAKFAST_ID))
+  // a day whose breakfast was logged already has a breakfast row: don't count it twice
+  const breakfastRow = new Set(planned.filter((p) => p.slot === 'breakfast').map((p) => p.date))
   return [
-    ...(hasBreakfast ? datesBetween(r).map((date) => ({ date, recipeId: FIXED_BREAKFAST_ID, portionScale: 1 })) : []),
-    ...planned.map((p) => ({ date: p.date, recipeId: p.recipeId, portionScale: p.portionScale })),
+    ...(hasBreakfast ? datesBetween(r).filter((date) => !breakfastRow.has(date)).map((date) => ({ date, recipeId: FIXED_BREAKFAST_ID, portionScale: 1 })) : []),
+    ...planned.map((p) => ({ date: p.date, recipeId: p.recipeId, portionScale: p.portionScale, substitutions: p.substitutions })),
   ]
+}
+
+/** Meals with swaps become their own recipe (same name, swapped ingredients) so the list buys the substitute. */
+export function withSubstitutions<M extends MealToShopFor & { substitutions?: Record<string, string> }>(
+  meals: M[], recipes: Recipe[], ingredients: RecipeIngredient[], ctx: MealContext,
+): { meals: MealToShopFor[]; recipes: Recipe[]; ingredients: RecipeIngredient[] } {
+  const outRecipes = [...recipes]
+  const outIngs = [...ingredients]
+  const byId = new Map(recipes.map((x) => [x.id, x]))
+  const outMeals = meals.map((m, i) => {
+    if (!m.substitutions || !Object.keys(m.substitutions).length) return { date: m.date, recipeId: m.recipeId, portionScale: m.portionScale }
+    const id = `${m.recipeId}~swap${i}`
+    const base = byId.get(m.recipeId)
+    if (!base) return { date: m.date, recipeId: m.recipeId, portionScale: m.portionScale }
+    outRecipes.push({ ...base, id })
+    for (const ing of mealIngredients(ctx, m)) outIngs.push({ ...ing, recipeId: id })
+    return { date: m.date, recipeId: id, portionScale: m.portionScale }
+  })
+  return { meals: outMeals, recipes: outRecipes, ingredients: outIngs }
 }
 
 /** The list in use: the most recently updated one. */
@@ -54,13 +76,15 @@ export async function generateList(repo: Repo, r: ListRange, listId?: string): P
   if (datesBetween(r).length > 31) throw new IntegrityError('Choose up to 31 days.')
   const ctx = await loadCostContext(repo)
   return repo.tx(async () => {
-    const meals = await mealsInRange(repo, r)
-    const [recipes, ingredients, yields, lots] = await Promise.all([
+    const [planMeals, allRecipes, allIngredients, yields, lots, mctx] = await Promise.all([
+      mealsInRange(repo, r),
       repo.db.recipes.toArray(),
       repo.db.recipe_ingredients.toArray(),
       repo.db.cooking_yields.toArray(),
       repo.db.inventory_lots.toArray(),
+      loadMealContext(repo),
     ])
+    const { meals, recipes, ingredients } = withSubstitutions(planMeals, allRecipes, allIngredients, mctx)
     const needs = buildShoppingNeeds({
       meals,
       recipes: new Map(recipes.map((x) => [x.id, x])),
@@ -189,4 +213,20 @@ export async function tickFromReceipt(repo: Repo, receiptId: string): Promise<nu
     }
     return n
   })
+}
+
+/** Add what a recipe is short of to the current list (starting this week's list if there is none). Returns how many were added. */
+export async function addMissingToList(repo: Repo, today: string, lines: Array<{ foodId?: string; productId?: string; label: string; short: { amount: number; unit: QtyUnit } }>): Promise<number> {
+  const todo = lines.filter((l) => l.short.amount > 1e-6 && (l.foodId || l.productId))
+  if (!todo.length) return 0
+  let list = await currentList(repo)
+  if (!list) list = await repo.get('shopping_lists', (await generateList(repo, thisWeekRange(today))).listId)
+  const products = await repo.db.products.toArray()
+  for (const l of todo) {
+    const product = l.productId ? products.find((p) => p.id === l.productId) : undefined
+    const choice: ExtraChoice = product ? { kind: 'product', product } : { kind: 'food', foodId: l.foodId!, label: l.label.replace(/\s*\(.*\)$/, '') }
+    const qty = l.short.unit === 'unit' ? Math.ceil(l.short.amount) : Math.ceil(l.short.amount / 10) * 10
+    await addExtra(repo, list!.id, choice, qty, l.short.unit)
+  }
+  return todo.length
 }
