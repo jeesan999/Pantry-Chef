@@ -92,7 +92,7 @@ test('Pantry: add, use, undo; ledger history is kept', async ({ page }) => {
 test('Plan: any day can be switched between training and rest, without re-approval', async ({ page }) => {
   await approveTargets(page)
   await page.goto('/#/plan')
-  const sub = page.locator('header p')
+  const sub = page.locator('header h1 + div')
   const count = async () => Number((await sub.textContent())!.match(/(\d) training/)![1])
   const groups = page.getByRole('group', { name: 'Day type' })
   await expect(groups).toHaveCount(7)
@@ -250,7 +250,7 @@ test('Shopping list: build from planned meals, tick, add an extra, kept on reloa
   await expect(page.getByText('Check the receipt')).toBeVisible({ timeout: 90_000 })
   await page.getByRole('button', { name: 'Save to pantry and expenses' }).click()
   await expect(page.getByText(/Ticked \d+ items? on your shopping list/)).toBeVisible()
-  await page.getByRole('link', { name: 'shopping list' }).click()
+  await page.getByRole('link', { name: 'shopping list', exact: true }).click()
   await expect(page.getByRole('checkbox', { name: /^Avocado/ })).toBeChecked()
 })
 
@@ -481,6 +481,36 @@ test('Backup: zip with a photo, restore brings deleted data back, undo restore, 
   await expect(page.getByText('Last backup 8 days ago.')).toBeVisible()
 })
 
+test('Appearance: theme and night mode persist across reloads; system mode follows the device; quick toggle', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto('/#/settings')
+  const html = page.locator('html')
+  await expect(html).toHaveAttribute('data-mode', 'light') // default: follow the system
+  await page.getByRole('radio', { name: /^Midnight theme/ }).click()
+  await page.getByRole('radio', { name: 'Night', exact: true }).click()
+  await expect(html).toHaveAttribute('data-theme', 'midnight')
+  await expect(html).toHaveAttribute('data-mode', 'dark')
+  const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+  await expect.poll(bg).toBe('rgb(10, 14, 26)') // after the short colour fade
+  await page.reload()
+  await expect(html).toHaveAttribute('data-theme', 'midnight')
+  await expect(html).toHaveAttribute('data-mode', 'dark')
+  await expect.poll(bg).toBe('rgb(10, 14, 26)') // after the short colour fade
+  await expect(page.getByRole('radio', { name: /^Midnight theme/ })).toHaveAttribute('aria-checked', 'true')
+
+  // system mode tracks the device as it changes
+  await page.getByRole('radio', { name: 'System', exact: true }).click()
+  await expect(html).toHaveAttribute('data-mode', 'light')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect(html).toHaveAttribute('data-mode', 'dark')
+
+  // one-tap toggle from the navigation (More on phones, sidebar on wide screens)
+  await page.goto('/#/')
+  if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('button', { name: 'Switch to light mode' }).click()
+  await expect(html).toHaveAttribute('data-mode', 'light')
+})
+
 async function tellChef(page: Page, text: string) {
   await page.getByLabel('Message Chef').fill(text)
   await page.getByLabel('Message Chef').press('Enter')
@@ -585,13 +615,17 @@ test('receipt scanning works with the network off (after install)', async ({ pag
 
 test('all 11 screens open from the navigation', async ({ page }) => {
   await page.goto('/#/')
+  const wide = (page.viewportSize()?.width ?? 0) >= 1024 // wide screens: sidebar with every screen; phones: bottom bar + More
   for (const n of ['Plan', 'Recipes', 'Pantry', 'Today']) {
     await page.getByRole('navigation').getByRole('link', { name: n }).click()
     await expect(page.locator('h1')).toBeVisible()
   }
   for (const s of SCREENS) {
-    await page.getByRole('button', { name: 'More' }).click()
-    await page.getByRole('dialog').getByRole('button', { name: s }).click()
+    if (wide) await page.getByRole('navigation').getByRole('link', { name: s }).click()
+    else {
+      await page.getByRole('button', { name: 'More' }).click()
+      await page.getByRole('dialog').getByRole('button', { name: s }).click()
+    }
     await expect(page.locator('h1')).toHaveText(s === 'Goals & Targets' ? 'Goals & Targets' : s)
   }
 })

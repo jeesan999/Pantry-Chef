@@ -61,6 +61,7 @@ export interface Settings {
   weeklyBudgetCents?: Cents
   monthlyBudgetCents?: Cents
   backupReminderDays: number
+  appearance?: { theme: string; mode: 'light' | 'dark' | 'system' } // colour theme and light/night mode
   lastBackupAt?: string
   updatedAt: string
 }

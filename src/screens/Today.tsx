@@ -109,10 +109,10 @@ export default function TodayScreen() {
             }
           >
             <div className="grid grid-cols-4 gap-1">
-              <Ring value={totals.energyKcal} target={day.energyKcal} label="Energy" unit="kcal" color="#e07f2a" />
-              <Ring value={totals.proteinG} target={day.proteinG.preferred} label="Protein" unit="g" color="#2e7445" />
-              <Ring value={totals.carbsG} target={day.carbsG} label="Carbs" unit="g" color="#ca8a04" />
-              <Ring value={totals.fatG} target={day.fatG} label="Fat" unit="g" color="#7c3aed" />
+              <Ring value={totals.energyKcal} target={day.energyKcal} label="Energy" unit="kcal" color="var(--nut-energy)" />
+              <Ring value={totals.proteinG} target={day.proteinG.preferred} label="Protein" unit="g" color="var(--nut-protein)" />
+              <Ring value={totals.carbsG} target={day.carbsG} label="Carbs" unit="g" color="var(--nut-carbs)" />
+              <Ring value={totals.fatG} target={day.fatG} label="Fat" unit="g" color="var(--nut-fat)" />
             </div>
             <div className="mt-4 space-y-2 text-sm">
               {day.carbsMinG !== null && <Limit label="Carbs (daily minimum)" value={totals.carbsG} limit={day.carbsMinG} />}

@@ -143,8 +143,7 @@ export default function ChefScreen() {
       <div ref={end} className="h-20" aria-hidden />
 
       <form
-        className="fixed inset-x-0 z-20 border-t border-stone-200 bg-stone-50/95 backdrop-blur"
-        style={{ bottom: 'calc(4rem + env(safe-area-inset-bottom))' }}
+        className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-20 border-t border-stone-200 bg-stone-50/95 backdrop-blur lg:bottom-0 lg:left-60"
         onSubmit={(e) => {
           e.preventDefault()
           say(text)
@@ -161,7 +160,7 @@ export default function ChefScreen() {
             autoComplete="off"
             className="block min-h-11 w-full rounded-xl border border-stone-300 bg-white px-3 text-ink focus:border-leaf-500 focus:outline-none focus:ring-2 focus:ring-leaf-200"
           />
-          <button type="submit" disabled={busy || !text.trim()} className="min-h-11 shrink-0 rounded-xl bg-leaf-700 px-4 text-sm font-medium text-white transition hover:bg-leaf-600 disabled:opacity-40">
+          <button type="submit" disabled={busy || !text.trim()} className="min-h-11 shrink-0 rounded-xl bg-leaf-700 px-4 text-sm font-medium text-on-accent transition hover:bg-leaf-600 disabled:opacity-40">
             Send
           </button>
         </div>

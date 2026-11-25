@@ -1,12 +1,7 @@
+import { useChartPalette } from '../../theme/chart'
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fmt } from '../../components/ui'
 
-// Trend in leaf-600 (the emphasis); daily weigh-ins as recessive stone dots for context. Grid and axes stay quiet.
-const TREND = '#2e7445'
-const DOTS = '#8a827c' // darker than stone-400 so the dots pass 3:1 on white
-const GRID = '#e7e5e4'
-const AXIS = '#78716c'
-const tick = { fill: AXIS, fontSize: 11 }
 const shortDate = (d: string) => `${Number(d.slice(8, 10))}/${Number(d.slice(5, 7))}`
 
 interface Row { date: string; kg?: number | null; avg?: number | null; cm?: number }
@@ -25,6 +20,7 @@ function WeightTip({ active, payload }: TipProps) {
 }
 
 export function WeightChart({ rows, targetKg }: { rows: Array<{ date: string; kg: number; avg: number | null }>; targetKg?: number }) {
+  const { TREND, GRID, AXIS, DOTS, SURFACE, tick } = useChartPalette()
   const vals = rows.flatMap((r) => [r.kg, r.avg ?? r.kg]).concat(targetKg ? [targetKg] : [])
   const lo = Math.floor(Math.min(...vals) - 0.5)
   const hi = Math.ceil(Math.max(...vals) + 0.5)
@@ -44,13 +40,13 @@ export function WeightChart({ rows, targetKg }: { rows: Array<{ date: string; kg
             <YAxis domain={[lo, hi]} tick={tick} tickLine={false} axisLine={false} width={52} allowDecimals={false} unit=" kg" />
             {targetKg && <ReferenceLine y={targetKg} stroke={AXIS} strokeDasharray="5 4" />}
             <Tooltip cursor={{ stroke: AXIS, strokeDasharray: '3 3' }} content={(p: TipProps) => <WeightTip {...p} />} />
-            <Line dataKey="kg" stroke="none" dot={{ r: 3, fill: DOTS, stroke: '#fff', strokeWidth: 1 }} activeDot={{ r: 5, fill: DOTS }} isAnimationActive={false} legendType="none" />
+            <Line dataKey="kg" stroke="none" dot={{ r: 3, fill: DOTS, stroke: SURFACE, strokeWidth: 1 }} activeDot={{ r: 5, fill: DOTS }} isAnimationActive={false} legendType="none" />
             <Line
               dataKey="avg"
               stroke={TREND}
               strokeWidth={2}
               dot={false}
-              activeDot={{ r: 5, fill: TREND, stroke: '#fff', strokeWidth: 2 }}
+              activeDot={{ r: 5, fill: TREND, stroke: SURFACE, strokeWidth: 2 }}
               connectNulls
               isAnimationActive={false}
               label={(p: { index?: number; x?: number | string; y?: number | string }) =>
@@ -79,6 +75,7 @@ export function WeightChart({ rows, targetKg }: { rows: Array<{ date: string; kg
 }
 
 export function WaistChart({ rows, targetCm }: { rows: Array<{ date: string; cm: number }>; targetCm?: number }) {
+  const { TREND, GRID, AXIS, SURFACE, tick } = useChartPalette()
   const vals = rows.map((r) => r.cm).concat(targetCm ? [targetCm] : [])
   return (
     <figure>
@@ -97,7 +94,7 @@ export function WaistChart({ rows, targetCm }: { rows: Array<{ date: string; cm:
                 return <div className="tabular rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs shadow-sm"><div className="text-stone-500">{fmt.date(r.date)}</div><b>{r.cm} cm</b></div>
               }}
             />
-            <Line dataKey="cm" stroke={TREND} strokeWidth={2} dot={{ r: 4, fill: TREND, stroke: '#fff', strokeWidth: 2 }} isAnimationActive={false} />
+            <Line dataKey="cm" stroke={TREND} strokeWidth={2} dot={{ r: 4, fill: TREND, stroke: SURFACE, strokeWidth: 2 }} isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>

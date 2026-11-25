@@ -1,6 +1,8 @@
-import { useState, type ReactNode } from 'react'
+import { useState } from 'react'
+import { BookOpen, CalendarDays, ChefHat, Ellipsis, House, Refrigerator, ScanLine, Settings, ShoppingCart, Target, TrendingUp, Wallet, type LucideIcon } from 'lucide-react'
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Sheet, cx } from './components/ui'
+import { ModeToggle } from './screens/settings/AppearanceCard'
 import TodayScreen from './screens/Today'
 import PlanScreen from './screens/Plan'
 import RecipesScreen from './screens/Recipes'
@@ -15,49 +17,48 @@ import GoalsScreen from './screens/Goals'
 import ChefScreen from './screens/Chef'
 import SettingsScreen from './screens/Settings'
 
-/** The 11 screens. The first four sit in the bottom bar; the rest are under More. */
-export const SCREENS = [
-  { path: '/', label: 'Today', icon: 'M3 12l9-8 9 8M5 10v10h14V10', main: true },
-  { path: '/plan', label: 'Plan', icon: 'M4 5h16v15H4zM4 9h16M9 3v4M15 3v4', main: true },
-  { path: '/recipes', label: 'Recipes', icon: 'M6 3h10l3 3v15H6zM9 8h7M9 12h7M9 16h4', main: true },
-  { path: '/pantry', label: 'Pantry', icon: 'M5 3h14v18H5zM5 10h14M5 16h14M9 6.5h2M9 13h2', main: true },
-  { path: '/scan', label: 'Scan Receipt', icon: 'M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4M7 12h10', main: false },
-  { path: '/shopping', label: 'Shopping List', icon: 'M5 6h14l-1.5 9h-11zM8 20a1 1 0 100-2M17 20a1 1 0 100-2', main: false },
-  { path: '/expenses', label: 'Expenses', icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2', main: false },
-  { path: '/progress', label: 'Progress', icon: 'M3 17l6-6 4 4 8-8M15 7h6v6', main: false },
-  { path: '/goals', label: 'Goals & Targets', icon: 'M12 21a9 9 0 110-18 9 9 0 010 18zM12 16a4 4 0 110-8 4 4 0 010 8z', main: false },
-  { path: '/chef', label: 'Chef', icon: 'M7 10a4 4 0 118-1 3 3 0 112 5v5H7v-5a3 3 0 010-4zM7 16h10', main: false },
-  { path: '/settings', label: 'Settings', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6zM19 12l2-1-1-3-2 .2-1.5-1.5L16.7 4l-3-1-1 2h-1.4l-1-2-3 1 .2 2.7L7 8.2 5 8 4 11l2 1v1.4l-2 1 1 3 2-.2 1.5 1.5L8.3 21l3 1 1-2h1.4l1 2 3-1-.2-2.7L18 15.8l2 .2 1-3-2-1z', main: false },
-] as const
+/** The 11 screens. On phones the first four sit in the bottom bar and the rest under More; on wide screens all are in the sidebar. */
+export const SCREENS: ReadonlyArray<{ path: string; label: string; icon: LucideIcon; main: boolean; group: 'Daily' | 'Shopping' | 'You' }> = [
+  { path: '/', label: 'Today', icon: House, main: true, group: 'Daily' },
+  { path: '/plan', label: 'Plan', icon: CalendarDays, main: true, group: 'Daily' },
+  { path: '/recipes', label: 'Recipes', icon: BookOpen, main: true, group: 'Daily' },
+  { path: '/pantry', label: 'Pantry', icon: Refrigerator, main: true, group: 'Daily' },
+  { path: '/scan', label: 'Scan Receipt', icon: ScanLine, main: false, group: 'Shopping' },
+  { path: '/shopping', label: 'Shopping List', icon: ShoppingCart, main: false, group: 'Shopping' },
+  { path: '/expenses', label: 'Expenses', icon: Wallet, main: false, group: 'Shopping' },
+  { path: '/progress', label: 'Progress', icon: TrendingUp, main: false, group: 'You' },
+  { path: '/goals', label: 'Goals & Targets', icon: Target, main: false, group: 'You' },
+  { path: '/chef', label: 'Chef', icon: ChefHat, main: false, group: 'You' },
+  { path: '/settings', label: 'Settings', icon: Settings, main: false, group: 'You' },
+]
 
-function Icon({ d, className }: { d: string; className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={cx('h-6 w-6', className)} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d={d} />
-    </svg>
-  )
-}
+const isActive = (path: string, pathname: string) => (path === '/' ? pathname === '/' : pathname.startsWith(path))
 
 function BottomNav() {
   const [more, setMore] = useState(false)
   const loc = useLocation()
   const nav = useNavigate()
   const extra = SCREENS.filter((s) => !s.main)
-  const inMore = extra.some((s) => loc.pathname.startsWith(s.path))
-  const tab = (active: boolean, children: ReactNode) => (
-    <span className={cx('flex flex-col items-center gap-0.5 text-[11px] font-medium', active ? 'text-leaf-700' : 'text-stone-500')}>{children}</span>
+  const inMore = extra.some((s) => isActive(s.path, loc.pathname))
+  const tab = (active: boolean, Icon: LucideIcon, label: string) => (
+    <span className={cx('flex flex-col items-center gap-1 text-[11px] font-medium transition-colors', active ? 'text-leaf-700' : 'text-stone-500')}>
+      <span className={cx('flex h-8 w-14 items-center justify-center rounded-full transition-colors', active && 'bg-leaf-100')}>
+        <Icon className="h-5 w-5" strokeWidth={active ? 2.2 : 1.8} aria-hidden />
+      </span>
+      {label}
+    </span>
   )
   return (
     <>
-      <nav aria-label="Main" className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 backdrop-blur">
+      <nav aria-label="Main" className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 backdrop-blur lg:hidden">
         <div className="mx-auto grid max-w-2xl grid-cols-5">
           {SCREENS.filter((s) => s.main).map((s) => (
             <NavLink key={s.path} to={s.path} end={s.path === '/'} className="flex min-h-16 items-center justify-center">
-              {({ isActive }) => tab(isActive, <><Icon d={s.icon} />{s.label}</>)}
+              {({ isActive: a }) => tab(a, s.icon, s.label)}
             </NavLink>
           ))}
           <button type="button" onClick={() => setMore(true)} className="flex min-h-16 items-center justify-center" aria-haspopup="dialog">
-            {tab(inMore, <><Icon d="M5 12h.01M12 12h.01M19 12h.01" className="stroke-[3]" />More</>)}
+            {tab(inMore, Ellipsis, 'More')}
           </button>
         </div>
       </nav>
@@ -71,22 +72,54 @@ function BottomNav() {
                 setMore(false)
                 nav(s.path)
               }}
-              className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl bg-stone-50 p-2 text-center text-sm font-medium text-stone-700 hover:bg-leaf-50"
+              className="flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border border-stone-200 bg-stone-50 p-2 text-center text-sm font-medium text-stone-700 transition hover:border-leaf-200 hover:bg-leaf-50"
             >
-              <Icon d={s.icon} className="text-leaf-700" />
+              <s.icon className="h-6 w-6 text-leaf-700" strokeWidth={1.8} aria-hidden />
               {s.label}
             </button>
           ))}
         </div>
+        <ModeToggle className="mt-3 w-full justify-center border border-stone-200" />
       </Sheet>
     </>
+  )
+}
+
+/** Wide screens: every screen in a sidebar, grouped. */
+function SideNav() {
+  const loc = useLocation()
+  const groups = ['Daily', 'Shopping', 'You'] as const
+  return (
+    <nav aria-label="Main" className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-stone-200 bg-white px-3 py-5 lg:flex">
+      <div className="mb-6 flex items-center gap-2.5 px-3">
+        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-leaf-700 text-on-accent"><ChefHat className="h-5 w-5" aria-hidden /></span>
+        <span className="text-lg font-semibold tracking-tight text-stone-900">Pantry Chef</span>
+      </div>
+      {groups.map((g) => (
+        <div key={g} className="mb-4">
+          <p className="mb-1 px-3 text-xs font-medium uppercase tracking-wider text-stone-500">{g}</p>
+          {SCREENS.filter((s) => s.group === g).map((s) => {
+            const a = isActive(s.path, loc.pathname)
+            return (
+              <NavLink key={s.path} to={s.path} end={s.path === '/'}
+                className={cx('flex min-h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors', a ? 'bg-leaf-100 text-leaf-800' : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900')}>
+                <s.icon className="h-[18px] w-[18px]" strokeWidth={a ? 2.2 : 1.8} aria-hidden />
+                {s.label}
+              </NavLink>
+            )
+          })}
+        </div>
+      ))}
+      <div className="mt-auto border-t border-stone-200 pt-3"><ModeToggle className="w-full" /></div>
+    </nav>
   )
 }
 
 export default function App() {
   return (
     <HashRouter>
-      <main className="min-h-full">
+      <SideNav />
+      <main className="min-h-full lg:pl-60">
         <Routes>
           <Route path="/" element={<TodayScreen />} />
           <Route path="/plan" element={<PlanScreen />} />

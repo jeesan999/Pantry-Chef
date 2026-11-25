@@ -1,12 +1,8 @@
+import { useChartPalette } from '../../theme/chart'
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { fmt } from '../../components/ui'
 import type { Bucket } from '../../engines/cost/engine'
 
-// One series per chart, so one colour: leaf-600 (validated ≥3:1 on the card surface). Grid and axes stay recessive.
-const SERIES = '#2e7445'
-const GRID = '#e7e5e4'
-const AXIS = '#78716c'
-const tick = { fill: AXIS, fontSize: 11 }
 
 /** Whole dollars for the axis; full cents in the tooltip. */
 const axisMoney = (c: number) => (c >= 100000 ? `$${Math.round(c / 100000)}k` : `$${Math.round(c / 100)}`)
@@ -25,6 +21,7 @@ function Tip({ active, payload, title }: TipProps & { title: (row: Record<string
 }
 
 export function SpendBars({ buckets, caption }: { buckets: Bucket[]; caption: string }) {
+  const { SERIES, GRID, CURSOR, tick } = useChartPalette()
   return (
     <figure>
       <div className="h-44" role="img" aria-label={`${caption}: bar chart`}>
@@ -34,7 +31,7 @@ export function SpendBars({ buckets, caption }: { buckets: Bucket[]; caption: st
             <XAxis dataKey="label" tick={tick} tickLine={false} axisLine={{ stroke: GRID }} interval={0} />
             <YAxis tickFormatter={axisMoney} tick={tick} tickLine={false} axisLine={false} width={48} allowDecimals={false} />
             <Tooltip
-              cursor={{ fill: '#f5f5f4' }}
+              cursor={{ fill: CURSOR }}
               content={(p: TipProps) => <Tip {...p} title={(r) => (r.start === r.end ? fmt.date(String(r.start)) : `${fmt.date(String(r.start))} – ${fmt.date(String(r.end))}`)} />}
             />
             <Bar dataKey="cents" fill={SERIES} radius={[4, 4, 0, 0]} maxBarSize={36} isAnimationActive={false} />
@@ -57,6 +54,7 @@ export function SpendBars({ buckets, caption }: { buckets: Bucket[]; caption: st
 }
 
 export function PriceLine({ points, unitLabel, caption }: { points: Array<{ date: string; cents: number; store: string }>; unitLabel: string; caption: string }) {
+  const { SERIES, GRID, AXIS, SURFACE, tick } = useChartPalette()
   const data = points.map((p, i) => ({ ...p, i }))
   return (
     <figure>
@@ -67,7 +65,7 @@ export function PriceLine({ points, unitLabel, caption }: { points: Array<{ date
             <XAxis dataKey="date" tickFormatter={(d: string) => `${Number(d.slice(8, 10))}/${Number(d.slice(5, 7))}`} tick={tick} tickLine={false} axisLine={{ stroke: GRID }} minTickGap={16} />
             <YAxis tickFormatter={(c: number) => `$${(c / 100).toFixed(c < 1000 ? 2 : 0)}`} tick={tick} tickLine={false} axisLine={false} width={52} domain={['auto', 'auto']} />
             <Tooltip cursor={{ stroke: AXIS, strokeDasharray: '3 3' }} content={(p: TipProps) => <Tip {...p} title={(r) => `${fmt.date(String(r.date))} · ${String(r.store)} · ${unitLabel}`} />} />
-            <Line type="linear" dataKey="cents" stroke={SERIES} strokeWidth={2} dot={{ r: 4, fill: SERIES, stroke: '#fff', strokeWidth: 2 }} activeDot={{ r: 6 }} isAnimationActive={false} />
+            <Line type="linear" dataKey="cents" stroke={SERIES} strokeWidth={2} dot={{ r: 4, fill: SERIES, stroke: SURFACE, strokeWidth: 2 }} activeDot={{ r: 6 }} isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
