@@ -98,6 +98,41 @@ describe('Chef: meals', () => {
   })
 })
 
+describe('Chef: planner and ratings', () => {
+  it('plan my week: a proposal listing each day; Do it writes the meals; undo restores', async () => {
+    const p = as(await ask({ ...deps, now: '08:00' }, 'plan my week'), 'proposal')
+    expect(p.text).toMatch(/^Plan 11 meals, today to Sun 29 Nov\?$/) // tonight's dinner is already planned
+    expect(p.changes[0]).toMatch(/^Today: Smoko: .+ · Lunch: .+/)
+    const done = await p.apply()
+    expect(await repo.db.planned_meals.count()).toBe(12)
+    await done.undo!()
+    expect(await repo.db.planned_meals.count()).toBe(1)
+  })
+
+  it('replan friday replaces only Friday', async () => {
+    await (as(await ask({ ...deps, now: '08:00' }, 'plan my week'), 'proposal')).apply()
+    const friBefore = await repo.db.planned_meals.where('date').equals('2026-11-27').toArray()
+    const p = as(await ask({ ...deps, now: '08:00' }, 'replan friday'), 'proposal')
+    expect(p.text).toMatch(/^Replan 3 meals, tomorrow\?$/)
+    expect(p.changes).toHaveLength(2) // Friday's meals + cost
+    await p.apply()
+    const others = await repo.db.planned_meals.where('date').notEqual('2026-11-27').count()
+    expect(others).toBe(9)
+    expect((await repo.db.planned_meals.where('date').equals('2026-11-27').count())).toBe(friBefore.length)
+  })
+
+  it('rate by name, and "that" means the last meal; undo restores the rating', async () => {
+    const done = as(await ask(deps, "don't suggest the prawn risotto again"), 'done')
+    expect(done.text).toMatch(/won’t suggest Prawn and pea risotto again/)
+    const risotto = (await repo.db.recipes.toArray()).find((r) => /risotto/i.test(r.name))!
+    expect((await repo.db.recipe_ratings.where('recipeId').equals(risotto.id).first())!.flags).toEqual(['do_not_recommend'])
+    await done.undo!()
+    expect(await repo.db.recipe_ratings.count()).toBe(0)
+    const that = as(await ask({ ...deps, now: '20:00' }, 'that was delicious'), 'done')
+    expect(that.text).toMatch(/Lemon chicken, rice and greens bowl is a favourite/)
+  })
+})
+
 describe('Chef: training days', () => {
   it('make tomorrow a rest day; undo returns to the usual week', async () => {
     const before = await dayChoice(repo, '2026-11-27')

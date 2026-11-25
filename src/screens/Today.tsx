@@ -12,8 +12,10 @@ import { DayTypeSwitch } from '../components/DayTypeSwitch'
 import { useAllRecipeNutrition, useApprovedTargets, useDayChoices, usePantrySuggestions, useProfile } from '../lib/hooks'
 import { addNutrients, emptyNutrients, scaleNutrients } from '../lib/nutrition'
 import { rankForSlot } from '../lib/rank'
+import { allRatings } from '../lib/ratings'
 import { budgetStatuses } from '../lib/expenses'
 import { BudgetAlerts } from './expenses/BudgetAlerts'
+import { StaleTargets } from './plan/StaleTargets'
 import { addDays as addDaysTo } from '../engines/nutrition/engine'
 
 export default function TodayScreen() {
@@ -60,6 +62,7 @@ export default function TodayScreen() {
         </span>
       }
     >
+      <StaleTargets />
       <BudgetAlerts statuses={budgets} link />
       {lastWeighIn && lastWeighIn <= addDaysTo(date, -7) && (
         <Notice tone="stone">No weigh-in for a week. <Link to="/progress" className="font-medium underline">Log one</Link> to keep your trend useful.</Notice>
@@ -196,7 +199,8 @@ function PickRecipe({ slot, targetProtein, onPick, onClose, onClear, hasCurrent 
   const nutrition = useAllRecipeNutrition()
   const pantry = usePantrySuggestions()
   const recipes = useLiveQuery(() => db.recipes.toArray())
-  const options = recipes ? rankForSlot({ slot, recipes, nutrition, pantry, targetProtein }) : []
+  const ratings = useLiveQuery(() => allRatings(repo))
+  const options = recipes ? rankForSlot({ slot, recipes, nutrition, pantry, targetProtein, ratings }) : []
   return (
     <Sheet open onOpenChange={(o) => !o && onClose()} title={`Choose ${SLOT_LABEL[slot].toLowerCase()}`}>
       <p className="mb-3 text-sm text-stone-500">Portions are scaled to about {Math.round(targetProtein)} g protein. What you have in the pantry first.</p>

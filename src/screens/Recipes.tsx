@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { RecipeArt } from '../components/RecipeArt'
 import { Badge, Button, Input, Page, Select, cx } from '../components/ui'
-import { db } from '../db/instance'
+import { db, repo } from '../db/instance'
+import { allRatings } from '../lib/ratings'
 import type { SlotTag } from '../db/types'
 import { useAllRecipeNutrition, usePantrySuggestions } from '../lib/hooks'
 
@@ -26,6 +27,7 @@ export default function RecipesScreen() {
   const [tag, setTag] = useState<SlotTag | ''>('')
   const [fromPantry, setFromPantry] = useState(false)
   const pantry = usePantrySuggestions()
+  const ratings = useLiveQuery(() => allRatings(repo))
   const cover = new Map((pantry ?? []).map((p, i) => [p.recipe.id, { ...p, rank: i }]))
 
   const cuisines = useMemo(() => [...new Set((recipes ?? []).map((r) => r.cuisine))].sort(), [recipes])
@@ -69,6 +71,8 @@ export default function RecipesScreen() {
                   </p>
                   <div className={cx('mt-1.5 flex flex-wrap gap-1')}>
                     {r.fixedSlot && <Badge>fixed</Badge>}
+                    {ratings?.get(r.id)?.flags.includes('favourite') && <Badge tone="red">♥ favourite</Badge>}
+                    {ratings?.get(r.id)?.flags.includes('do_not_recommend') && <Badge>not suggested</Badge>}
                     {cover.get(r.id) && <Badge tone="ember">{Math.round(cover.get(r.id)!.coverage * 100)}% in stock</Badge>}
                     <Badge tone="leaf">{r.cuisine}</Badge>
                   </div>

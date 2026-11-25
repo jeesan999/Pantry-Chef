@@ -302,6 +302,63 @@ test('Progress: trend from 4 weeks of weigh-ins, calibration proposed and approv
   await expect(page.getByRole('button', { name: 'Show all 28' })).toBeVisible()
 })
 
+test('Planner: draft, lock, swap, accept, undo; ratings keep a recipe out; Chef plans next week; re-portion after new targets', async ({ page }) => {
+  test.setTimeout(90_000)
+  await page.clock.setFixedTime(new Date('2026-11-23T07:00:00')) // Monday morning: the whole week is ahead
+  await approveTargets(page)
+  await page.goto('/#/plan')
+  await page.getByRole('button', { name: 'Plan this week' }).click()
+  await expect(page.getByText('Draft plan')).toBeVisible()
+  await expect(page.getByText(/^21 meals suggested/)).toBeVisible()
+  await expect(page.getByText('suggested', { exact: true })).toHaveCount(21)
+  // lock Monday's smoko, swap Monday's lunch
+  const monLunch = page.getByTestId('slot-2026-11-23|lunch')
+  await page.getByRole('button', { name: 'Lock Smoko on Mon, 23 Nov' }).click()
+  await expect(page.getByTestId('slot-2026-11-23|smoko').getByText('locked')).toBeVisible()
+  await expect(page.getByText('suggested', { exact: true })).toHaveCount(20) // the draft has re-planned around the lock
+  const before = await monLunch.locator('span.block').first().textContent()
+  await page.getByRole('button', { name: 'Swap Lunch on Mon, 23 Nov' }).click()
+  await expect(monLunch.locator('span.block').first()).not.toHaveText(before!)
+  await page.getByRole('button', { name: 'Accept plan' }).click()
+  await expect(page.getByText(/Plan saved: 21 meals/)).toBeVisible()
+  await page.goto('/#/')
+  await expect(page.getByText('Nothing chosen yet.')).toHaveCount(0)
+  await page.goto('/#/plan')
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(page.getByText(/Undone: the week is as it was/)).toBeVisible()
+  await page.goto('/#/')
+  await expect(page.getByText('Nothing chosen yet.')).toHaveCount(3)
+
+  // "Don't suggest" keeps a recipe out of plans
+  await page.goto('/#/recipes/recipe:au-chicken-rice-bowl')
+  await page.getByRole('button', { name: 'Don’t suggest' }).click()
+  await expect(page.getByRole('button', { name: '✓ Don’t suggest' })).toHaveAttribute('aria-pressed', 'true')
+  await page.goto('/#/plan')
+  await page.getByRole('button', { name: 'Plan this week' }).click()
+  await expect(page.getByText(/^21 meals suggested/)).toBeVisible()
+  await expect(page.getByText('Lemon chicken, rice and greens bowl')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Discard' }).click()
+
+  // Chef plans next week
+  await page.goto('/#/chef')
+  await page.getByLabel('Message Chef').fill('plan next week')
+  await page.getByLabel('Message Chef').press('Enter')
+  await expect(page.getByText(/^Plan 21 meals, Mon 30 Nov to Sun 6 Dec\?$/)).toBeVisible()
+  await page.getByRole('button', { name: 'Do it' }).click()
+  await expect(page.getByText(/Planned 21 meals/)).toBeVisible()
+
+  // new targets: upcoming meals were portioned for the old ones
+  await page.goto('/#/goals')
+  await page.getByLabel('Goal type').selectOption('muscle_gain')
+  await page.getByRole('button', { name: 'Propose new targets for this goal' }).click()
+  await page.getByRole('button', { name: 'Approve' }).click()
+  await expect(page.getByText('v2', { exact: true })).toBeVisible()
+  await page.goto('/#/')
+  await expect(page.getByText(/Your targets changed \(now v2\)\. 21 upcoming meals/)).toBeVisible()
+  await page.getByRole('button', { name: 'Re-portion upcoming meals' }).click()
+  await expect(page.getByText(/Re-portioned \d+ meals? for your new targets/)).toBeVisible()
+})
+
 async function tellChef(page: Page, text: string) {
   await page.getByLabel('Message Chef').fill(text)
   await page.getByLabel('Message Chef').press('Enter')

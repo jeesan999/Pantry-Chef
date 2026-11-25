@@ -1,6 +1,6 @@
 /** Recipe ranking for a meal slot, shared by Today's picker and Chef. */
 import type { Repo } from '../db/repo'
-import type { Food, Recipe } from '../db/types'
+import type { Food, Recipe, RecipeRating } from '../db/types'
 import type { SlotName } from '../engines/contract'
 import { SLOT_TAGS } from './day'
 import { portionForProtein, recipeNutrition, type RecipeNutrition } from './nutrition'
@@ -50,12 +50,19 @@ export function rankForSlot(args: {
   nutrition?: Map<string, RecipeNutrition>
   pantry?: PantrySuggestion[]
   targetProtein: number
+  ratings?: Map<string, RecipeRating>
 }): SlotOption[] {
   const tags = new Set(SLOT_TAGS[args.slot])
   const cover = new Map((args.pantry ?? []).map((p) => [p.recipe.id, p]))
-  const score = (o: SlotOption) => o.pantry + (o.soon ? 0.25 : 0) - Math.abs(o.scale - 1)
+  const liked = (id: string) => {
+    const r = args.ratings?.get(id)
+    if (!r) return 0
+    return (r.flags.includes('favourite') ? 0.3 : 0) + (r.flags.includes('cook_again') ? 0.2 : 0) + (r.stars ? (r.stars - 3) * 0.1 : 0) -
+      (r.flags.includes('too_expensive') || r.flags.includes('too_slow') ? 0.15 : 0) - (r.flags.includes('too_repetitive') ? 0.25 : 0)
+  }
+  const score = (o: SlotOption) => o.pantry + (o.soon ? 0.25 : 0) - Math.abs(o.scale - 1) + liked(o.r.id)
   return args.recipes
-    .filter((r) => !r.fixedSlot && r.slotTags.some((t) => tags.has(t)))
+    .filter((r) => !r.fixedSlot && r.slotTags.some((t) => tags.has(t)) && !args.ratings?.get(r.id)?.flags.includes('do_not_recommend'))
     .map((r) => {
       const n = args.nutrition?.get(r.id)
       const scale = n ? portionForProtein(n.perServing.proteinG, args.targetProtein) : 1

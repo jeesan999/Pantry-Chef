@@ -87,7 +87,7 @@ export function resolveDay(ts: TargetSet, date: string, dayType: DayType, workou
   return { ...t, slots, date, dayType, workout: dayType === 'training' ? workout : undefined }
 }
 
-/** Engine B's entry point (implemented in Phase 5). */
+/** Engine B's entry point, in general form. Implemented by planWeek in engines/planner/engine.ts (Phase 8). */
 export type PlanWeek<Inventory, Recipe, Preferences, MealPlan> = (
   targets: TargetSet,
   dayTypes: Record<string, { dayType: DayType; workout?: WorkoutInfo }>,

@@ -2,7 +2,7 @@
  * Engine E (Chef): a rule-based interpreter. Text in, a structured intent out. No AI service,
  * no network, no database: the caller resolves names (recipes, foods) and acts on the intent.
  */
-import type { QtyUnit } from '../../db/types'
+import type { QtyUnit, RatingFlag } from '../../db/types'
 import type { SlotName } from '../contract'
 import { normalise, stripFiller } from './normalise'
 import { parseWhen } from './when'
@@ -26,6 +26,8 @@ export type Intent =
   | { type: 'spent'; period: 'week' | 'month' }
   | { type: 'budget' }
   | { type: 'progress' }
+  | { type: 'plan'; week: 'this' | 'next'; date?: string; replan: boolean }
+  | { type: 'rate'; recipe?: string; date?: string; slot?: SlotName; flags: RatingFlag[]; stars?: 1 | 2 | 3 | 4 | 5 }
 
 export type Interpretation = { kind: 'intent'; intent: Intent } | { kind: 'unknown'; closest: string[] }
 
@@ -51,6 +53,8 @@ export const EXAMPLES = [
   'How much have I spent this week?',
   'How much budget is left?',
   'How’s my progress?',
+  'Plan my week',
+  'I loved the salmon don',
 ]
 
 const has = (s: string, re: RegExp) => re.test(s)
@@ -117,6 +121,35 @@ export function interpret(raw: string, today: string): Interpretation {
     if (kg >= 30 && kg <= 300) {
       const timeOfDay = has(t, /\b(evening|tonight|night|pm)\b/) ? 'evening' : has(t, /\b(midday|lunch|noon|afternoon|arvo)\b/) ? 'midday' : 'morning'
       return ok({ type: 'weigh', kg, timeOfDay })
+    }
+  }
+
+  // meal planner: "plan my week", "plan next week", "fill the rest of the week", "replan friday"
+  const replan = has(t, /\b(replan|re plan|start over|from scratch|redo)\b/)
+  if (
+    !has(t, /\b(list|shopping)\b/) &&
+    !has(t, /^(whats|what is|what are|what|show|tell me)\b/) &&
+    (has(t, /\b(plan|replan|re plan|fill|sort out|organise|organize|redo)\b.*\b(week|meals|days)\b/) || has(t, /\b(meal plan|plan my meals|plan meals)\b/) || (replan && !!w.date))
+  ) {
+    const onlyDay = !!w.date && !has(t, /\bweek\b/)
+    return ok({ type: 'plan', week: has(t, /\bnext week\b/) ? 'next' : 'this', date: onlyDay ? w.date : undefined, replan: replan || onlyDay })
+  }
+
+  // ratings: "I loved the salmon don", "don't suggest tacos again", "that was too expensive", "4 stars"
+  if (!has(t, /\b(swap|switch|change|replace|something else|different|instead)\b/)) {
+    const flags: RatingFlag[] = []
+    if (has(t, /\b(dont suggest|dont recommend|never again|didnt like|did not like|hated|hate|dont like|disliked|gross|awful|not again|never make)\b/)) flags.push('do_not_recommend')
+    else if (has(t, /\b(loved|love|loving|favourite|favorite|delicious|amazing|so good|yum|yummy)\b/)) flags.push('favourite')
+    if (has(t, /\btoo (expensive|pricey|dear)\b/)) flags.push('too_expensive')
+    if (has(t, /\btoo (slow|long)\b|\btook (too long|ages|forever)\b/)) flags.push('too_slow')
+    if (has(t, /\b(too often|too much of|had it too much|too repetitive)\b/)) flags.push('too_repetitive')
+    if (has(t, /\b(cook again|make again|have again|again soon)\b/) && !flags.includes('do_not_recommend')) flags.push('cook_again')
+    const st = t.match(/\b([1-5])\s*(?:stars?|out of 5)\b/)
+    if (flags.length || st) {
+      const recipe = stripFiller(
+        w.rest.replace(/\b(dont suggest|dont recommend|never again|didnt like|did not like|hated|hate|dont like|disliked|gross|awful|not again|never make|loved|love|loving|favourite|favorite|delicious|amazing|so good|yummy|yum|too expensive|too pricey|too dear|too slow|too long|took too long|took ages|took forever|too often|too much of|had it too much|too repetitive|cook again|make again|have again|again soon|again|[1-5]\s*(?:stars?|out of 5)|rate|rated|give|gave|was|were|is|really|very|that|it|this|one|recipe|meal|im|i am|making|make|cook|have|had)\b/g, ' '),
+      ).replace(/\s+/g, ' ').trim()
+      return ok({ type: 'rate', recipe: recipe || undefined, date: w.date, slot: w.slot, flags, stars: st ? (Number(st[1]) as 1 | 2 | 3 | 4 | 5) : undefined })
     }
   }
 
@@ -190,7 +223,7 @@ export function interpret(raw: string, today: string): Interpretation {
   ) {
     return ok({ type: 'meals', date, slot: w.slot })
   }
-  if (has(t, /\b(menu|meal plan)\b/) && !has(t, /\b(swap|change)\b/)) return ok({ type: 'meals', date, slot: w.slot })
+  if (has(t, /\bmenu\b/) && !has(t, /\b(swap|change)\b/)) return ok({ type: 'meals', date, slot: w.slot })
 
   // pantry stock questions
   const loc = t.match(/\b(fridge|freezer|pantry|cupboard)\b/)

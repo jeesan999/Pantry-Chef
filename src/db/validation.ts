@@ -132,6 +132,12 @@ export const SCHEMAS: Partial<Record<TableName, z.ZodType>> = {
     ticked: z.boolean(),
     source: z.enum(['plan', 'extra']).optional(),
   }).loose(),
+  recipe_ratings: z.object({
+    id,
+    recipeId: id,
+    stars: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]).optional(),
+    flags: z.array(z.enum(['favourite', 'cook_again', 'do_not_recommend', 'too_expensive', 'too_slow', 'needs_flavour', 'too_repetitive'])),
+  }).loose(),
   budgets: z.object({
     id,
     settingsId: id,

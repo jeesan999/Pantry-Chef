@@ -16,6 +16,8 @@ import { EXAMPLES, interpret, type Intent } from '../engines/chef/intents'
 import { SLOT_LABEL, SLOT_TAGS, assignMeal, clearMeal, targetsForDate } from './day'
 import { budgetStatuses } from './expenses'
 import { loadProgress } from './progress'
+import { FLAG_LABEL, allRatings, rate, restoreRating } from './ratings'
+import { acceptDraft, buildDraft } from './planner'
 import { fmtRate, hasRate } from '../engines/progress/engine'
 import { searchItems } from './itemSearch'
 import { addNutrients, emptyNutrients } from './nutrition'
@@ -75,6 +77,8 @@ export async function act(deps: ChefDeps, intent: Intent): Promise<Reply> {
     case 'spent': return spent(deps, intent.period)
     case 'budget': return budget(deps)
     case 'progress': return progress(deps)
+    case 'plan': return planMeals(deps, intent.week, intent.date, intent.replan)
+    case 'rate': return rateRecipe(deps, intent)
   }
 }
 
@@ -170,14 +174,15 @@ async function swap(deps: ChefDeps, date: string, slot: SlotName | undefined, wi
   if (slot === 'breakfast') return breakfastFixed()
   const t = await targetsOn(deps, date)
   if (!t) return noTargets()
-  const [recipes, nutrition, pantry, current] = await Promise.all([
+  const [recipes, nutrition, pantry, current, ratings] = await Promise.all([
     deps.repo.db.recipes.toArray(),
     loadRecipeNutrition(deps.repo),
     loadPantrySuggestions(deps.repo, deps.today),
     plannedAt(deps.repo, date, slot),
+    allRatings(deps.repo),
   ])
   const allowed = withFood ? await recipesWith(deps.repo, [withFood]) : null
-  const ranked = rankForSlot({ slot, recipes, nutrition, pantry, targetProtein: mid(t.day.slots[slot].proteinG) })
+  const ranked = rankForSlot({ slot, recipes, nutrition, pantry, ratings, targetProtein: mid(t.day.slots[slot].proteinG) })
     .filter((o) => o.r.id !== current?.recipeId && (!allowed || allowed.has(o.r.id)))
     .slice(0, 3)
   const now = current ? (await deps.repo.get('recipes', current.recipeId))?.name : undefined
@@ -591,4 +596,79 @@ async function progress(deps: ChefDeps): Promise<Reply> {
   }
   if (d.adjustment.kind === 'suggest') lines.push(`Targets check: ${d.adjustment.reason}`)
   return answer('Your progress:', { lines, link })
+}
+
+// ---------- planner and ratings ----------
+
+async function planMeals(deps: ChefDeps, week: 'this' | 'next', date: string | undefined, replan: boolean): Promise<Reply> {
+  if (!(await targetsOn(deps, deps.today))) return noTargets()
+  const range = date ? { from: date, to: date } : week === 'next' ? nextWeekRange(deps.today) : thisWeekRange(deps.today)
+  const draft = await buildDraft(deps.repo, { ...range, mode: replan ? 'unlocked' : 'empty', seed: 0, locks: [], skips: [] }, deps.today, deps.now)
+  const meals = draft.result.meals
+  const when = date ? dayLabel(date, deps.today) : `${dayLabel(range.from, deps.today)} to ${dayLabel(range.to, deps.today)}`
+  if (!meals.length) {
+    return answer(`Every meal ${when} is already planned.`, { options: [{ label: replan ? 'Open the plan' : 'Replan them from scratch', run: () => (replan ? Promise.resolve(answer('Open the Plan screen to change meals one by one.', { link: { to: '/plan', label: 'Open Plan' } })) : planMeals(deps, week, date, true)) }] })
+  }
+  const byDate = new Map<string, string[]>()
+  for (const m of meals) byDate.set(m.date, [...(byDate.get(m.date) ?? []), `${SLOT_LABEL[m.slot]}: ${draft.names.get(m.recipeId)}`])
+  const w = draft.result.week
+  const issueDays = draft.result.days.filter((d) => d.issues.length).length
+  return {
+    kind: 'proposal',
+    text: `${replan ? 'Replan' : 'Plan'} ${meals.length} meal${meals.length === 1 ? '' : 's'}, ${when}?`,
+    changes: [
+      ...[...byDate].map(([d, xs]) => `${cap(dayLabel(d, deps.today))}: ${xs.join(' · ')}`),
+      w.costCents === 0 && w.unpricedMeals ? 'Cost: not known yet (meals need prices from your receipts)' : `Estimated food cost ${money(w.costCents)}${w.unpricedMeals ? ` + ${w.unpricedMeals} not yet priced` : ''}`,
+      w.usesSoon.length ? `Uses food dated soon: ${w.usesSoon.join(', ')}` : '',
+      issueDays ? `${issueDays} day${issueDays === 1 ? '' : 's'} miss a limit; see the Plan screen` : '',
+    ].filter(Boolean),
+    apply: async () => {
+      const a = await acceptDraft(deps.repo, draft)
+      return {
+        text: `Planned ${a.written} meal${a.written === 1 ? '' : 's'}. Open Plan to swap any you don’t fancy.`,
+        link: { to: '/plan', label: 'See the plan' },
+        undo: async () => {
+          await a.undo()
+          return 'The meals are back as they were.'
+        },
+      }
+    },
+  }
+}
+
+async function rateRecipe(deps: ChefDeps, i: Extract<Intent, { type: 'rate' }>): Promise<Reply> {
+  let recipe: Recipe | undefined
+  if (i.recipe) {
+    const found = await findRecipes(deps.repo, i.recipe)
+    if (!found.length) return answer(`I couldn’t find a recipe called “${i.recipe}”.`, { link: { to: '/recipes', label: 'Browse recipes' } })
+    if (found.length > 1) return answer('Which one?', { options: found.map((r) => ({ label: r.name, run: () => rateRecipe(deps, { ...i, recipe: r.name }) })) })
+    recipe = found[0]
+  } else {
+    // "that": the meal at that slot, else the most recent meal already eaten time-wise
+    const t = await targetsOn(deps, deps.today)
+    const meals = (await deps.repo.db.planned_meals.where('date').belowOrEqual(i.date ?? deps.today).toArray())
+      .filter((m) => m.slot !== 'breakfast' && (!i.slot || m.slot === i.slot) && (!i.date || m.date === i.date))
+      .filter((m) => m.date < deps.today || i.date === deps.today || !deps.now || !t || t.day.slots[m.slot].time <= deps.now)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time))
+    const last = meals[meals.length - 1]
+    recipe = last ? await deps.repo.get('recipes', last.recipeId) : undefined
+    if (!recipe) return answer('Which recipe? Say its name, e.g. “I loved the salmon don”.')
+  }
+  const r = recipe
+  const prev = await rate(deps.repo, r.id, { on: i.flags, stars: i.stars })
+  const said = [
+    i.flags.includes('do_not_recommend') ? `I won’t suggest ${r.name} again` : '',
+    i.flags.includes('favourite') ? `${r.name} is a favourite` : '',
+    i.stars ? `${r.name}: ${i.stars} star${i.stars === 1 ? '' : 's'}` : '',
+    ...i.flags.filter((f) => !['do_not_recommend', 'favourite'].includes(f)).map((f) => `${r.name}: ${FLAG_LABEL[f].toLowerCase()}`),
+  ].filter(Boolean)
+  return {
+    kind: 'done',
+    text: `${said.join('. ')}. The planner will take it into account.`,
+    link: { to: `/recipes/${r.id}`, label: 'See the recipe' },
+    undo: async () => {
+      await restoreRating(deps.repo, r.id, prev)
+      return `Your rating of ${r.name} is back as it was.`
+    },
+  }
 }
