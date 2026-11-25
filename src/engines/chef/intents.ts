@@ -34,11 +34,23 @@ export type Intent =
   | { type: 'undoEaten'; date: string; slot?: SlotName; item?: string }
   | { type: 'eatenToday'; date: string }
   | { type: 'backup' }
+  | { type: 'find'; date: string; slot?: SlotName; foods: string[]; maxCents?: number; maxMin?: number; highProtein?: boolean; postWorkout?: boolean; fromPantry?: boolean; leftovers?: boolean }
+  | { type: 'substitute'; item: string }
+  | { type: 'proteinBoost'; date: string }
 
 export type Interpretation = { kind: 'intent'; intent: Intent } | { kind: 'unknown'; closest: string[] }
 
 /** Example commands: shown as chips and used to suggest the closest when a command isn't understood. */
 export const EXAMPLES = [
+  'What can I make with what’s in my pantry?',
+  'High-protein lunch ideas',
+  'How do I reach my protein target today?',
+  'I have chicken, rice and broccoli',
+  'Dinner under $5',
+  'Something quick for dinner',
+  'Post-workout meal',
+  'What can I do with leftover rice?',
+  'What can I use instead of broccoli?',
   'Swap tonight’s dinner',
   'Something with chicken for lunch tomorrow',
   'Have butter chicken for dinner on Friday',
@@ -138,6 +150,57 @@ export function interpret(raw: string, today: string): Interpretation {
 
   // backup: "back up my data", "when did I last back up"
   if (has(t, /\b(back ?up|backed up|backups?|export (my )?data|save (a copy of )?my data)\b/) && !has(t, /\b(list|shopping)\b/)) return ok({ type: 'backup' })
+
+  // substitutes: "what can I use instead of sour cream", "substitute for yoghurt", "no eggs, what can I use"
+  const subM =
+    t.match(/\b(?:instead of|substitute for|substitute|sub for|sub out|swap out|alternative to|alternatives to|alternative for|replacement for|replace)\s+(?:the |my |some )?(.+?)(?:\s+(?:with|in|for)\b.*)?$/) ??
+    t.match(/\b(?:dont have|do not have|out of|ran out of|no)\s+(?:any )?(.+?)\s+(?:what|which)\s+(?:can|could|should|do)\s+i\s+use\b/)
+  if (subM && (has(t, /\b(instead of|substitute|sub|alternative|replacement|can i use|could i use|should i use)\b/)) && !w.slot && !has(t, /\b(tonight|meal|dinner|lunch|smoko)\b/)) {
+    const item = cleanItem(subM[1].replace(/\b(what|can|could|i|use|instead)\b/g, ' '))
+    if (item) return ok({ type: 'substitute', item })
+  }
+
+  // reaching the protein target: "how do I hit my protein", "help me reach my protein target"
+  if (has(t, /\bprotein\b/) && has(t, /\b(reach|hit|meet|get to|make up|get more|boost|increase|top up|more protein|short on|short of)\b/) && has(t, /\b(how|help|ideas?|what|suggest\w*|can|need|get)\b/) && !has(t, /\b(left|remaining|to go)\b/)) {
+    return ok({ type: 'proteinBoost', date })
+  }
+
+  // finding meals by what you want: high protein, price, time, after training, leftovers, "I have X, Y and Z"
+  {
+    const u = t.replace(/-/g, ' ')
+    const pantryAsk = has(u, /\b(make|cook|eat|have)\b/) && has(u, /\b(whats in (?:my|the) (?:pantry|fridge)|what i have|what ive got|from (?:my|the) pantry|in (?:my|the) pantry|in stock)\b/)
+    const highProtein = has(u, /\b(high protein|protein rich|protein packed|high in protein|lots of protein|most protein|more protein|protein heavy)\b/)
+    const price = u.match(/\b(?:under|less than|below|max|no more than|cheaper than|for)\s+(\d+(?:\.\d+)?)\s*(?:dollars?|bucks)?\b(?!\s*(?:min|mins|minutes|kcal|calories|g\b|grams|hours?))/)
+    const cheap = has(u, /\b(cheap|cheapest|inexpensive|low cost|budget friendly|affordable)\b/)
+    const timeM = u.match(/\b(?:under|in|less than|within|max)\s+(\d+)\s*(?:min|mins|minutes)\b/)
+    const quick = has(u, /\b(quick|fast|quickly|speedy|easy and quick|no time|in a hurry|rushed)\b/)
+    const postWorkout = has(u, /\b(post workout|post training|post gym|after (?:the )?(?:gym|training|workout|my workout|a workout|lifting|session)|recovery meal)\b/)
+    const leftovers = has(u, /\b(leftovers?|left over)\b/)
+    const haveM = u.match(/^(?:i |we )?(?:only )?(?:have|ve got|have got|got|ive got|weve got)\s+(?:only )?(?:some )?(.+?)(?:\s+(?:what|anything|ideas?|left)\b.*)?$/)
+    const haveFoods = haveM && !has(u, /\b(ate|eaten|had|to|time|minutes|budget|kg)\b/) && /\band\b/.test(haveM[1]) ? haveM[1] : null
+    const asking = has(u, /\b(ideas?|suggest\w*|recommend\w*|options?|something|anything|what|recipes?|meals?|give me|show me|find|need|want|make|cook|eat|have)\b/) || !!w.slot
+    if ((highProtein || price || cheap || timeM || quick || postWorkout || leftovers) && asking || haveFoods) {
+      let foods: string[] = []
+      const withM = u.match(/\b(?:with|using)\s+(?:my |the |some )?(.+?)(?:\s+(?:for|under|in|less than|that|which|tonight|today|tomorrow)\b.*)?$/)
+      const leftM = u.match(/\bleftovers? (?:of )?(.+?)(?:\s+(?:for|tonight|today|tomorrow)\b.*)?$/) ?? u.match(/\bleft ?over\s+(.+?)(?:\s+(?:for|tonight|today|tomorrow)\b.*)?$/)
+      const src = haveFoods ?? withM?.[1] ?? (leftM && !/^(what|ideas?)\b/.test(leftM[1]) ? leftM[1] : null)
+      if (src) foods = src.split(/\band\b|\bplus\b/).map((x) => cleanItem(x.replace(/\b(leftovers?|left over|some|cooked|what|can|do|i|with)\b/g, ' '))).filter((x) => x && !/^(pantry|whats in my pantry|what i have|stock)$/.test(x))
+      const slot = w.slot
+      return ok({
+        type: 'find',
+        date,
+        slot,
+        foods,
+        maxCents: price ? Math.round(Number(price[1]) * 100) : cheap ? 500 : undefined,
+        maxMin: timeM ? Number(timeM[1]) : quick ? 20 : undefined,
+        highProtein: highProtein || undefined,
+        postWorkout: postWorkout || undefined,
+        fromPantry: leftovers || !!haveFoods || pantryAsk || undefined,
+        leftovers: leftovers || undefined,
+      })
+    }
+    if (pantryAsk && !w.slot) return ok({ type: 'cook', foods: [] })
+  }
 
   // eating: what have I eaten, undo a log, skipped, ate a meal
   if (has(t, /\b(what|how much|how many calories)\b.*\b(have i|did i|i have|i)\s+(eaten|eat|had|ate)\b/)) return ok({ type: 'eatenToday', date })

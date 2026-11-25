@@ -28,6 +28,7 @@ export interface DraftParams {
   locks: Meal[] // meals pinned in the draft (kept, or swapped in by you)
   skips: string[] // `${date}|${slot}` left empty on purpose
   exclude?: Record<string, string[]> // recipes swapped away from a slot
+  alternatives?: number // rank this many alternatives per meal (default 5)
 }
 export interface Draft { params: DraftParams; result: PlanResult; existing: Meal[]; locked: Meal[]; past: string[]; days: Record<string, DayTargets>; names: Map<string, string> }
 
@@ -170,6 +171,7 @@ export async function buildDraft(repo: Repo, params: DraftParams, today: string,
     foodNames: new Map(foods.map((f) => [f.id, displayName(f.name)])),
     seed: params.seed,
     exclude: params.exclude,
+    alternatives: params.alternatives,
   }
   return { params, result: planWeek(input), existing, locked, past: [...past], days, names: new Map(recipes.map((r) => [r.id, r.name])) }
 }

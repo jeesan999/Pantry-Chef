@@ -67,6 +67,7 @@ export async function suggestForSlot(repo: Repo, args: { date: string; slot: Pla
       locks: others.map((p) => ({ date, slot: p.slot as PlanSlot, recipeId: p.recipeId, portionScale: p.portionScale })),
       // only this meal is open: every other empty meal stays empty
       skips: (['smoko', 'lunch', 'dinner'] as PlanSlot[]).filter((s) => s !== slot && !others.some((p) => p.slot === s)).map((s) => slotKey({ date, slot: s })),
+      alternatives: Math.max(5, (args.limit ?? 3) + 1),
     },
     today,
     date === today ? args.now : undefined,

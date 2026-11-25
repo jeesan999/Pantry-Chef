@@ -41,6 +41,7 @@ export interface PlanInput {
   seed?: number
   exclude?: Record<string, string[]> // `${date}|${slot}` -> recipes you swapped away from there
   extra?: Record<string, Nutrients> // per day: eaten beyond the plan (quick foods, part portions), added to day totals
+  alternatives?: number // how many alternatives to rank per meal (default 5)
 }
 
 export interface PlannedMealChoice extends Meal { reasons: string[]; alternatives: string[] }
@@ -344,7 +345,7 @@ export function planWeek(inp: PlanInput): PlanResult {
         })
         .filter((x) => x.total > -Infinity)
         .sort((a, b) => b.total - a.total || a.id.localeCompare(b.id))
-        .slice(0, 5)
+        .slice(0, inp.alternatives ?? 5)
         .map((x) => x.id)
       chosen.set(key(f), m)
       return { ...m, reasons: final.perMeal.get(key(f))?.reasons ?? [], alternatives: alts }

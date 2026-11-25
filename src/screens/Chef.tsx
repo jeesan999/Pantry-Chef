@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Page } from '../components/ui'
 import { pantry, repo, today } from '../db/instance'
 import { newId } from '../db/repo'
@@ -7,7 +8,7 @@ import { on } from '../lib/events'
 import { Chip, Thread, type Handlers, type Msg } from './chef/Thread'
 
 const STORE = 'chef-thread'
-const STARTERS = ['Swap tonight’s dinner', 'Make tomorrow a rest day', 'Use up what expires soon', 'What can I cook?', 'Add milk to the shopping list', 'How much budget is left?']
+const STARTERS = ['Swap tonight’s dinner', 'Make tomorrow a rest day', 'Use up what expires soon', 'What can I cook?', 'High-protein lunch ideas', 'How do I reach my protein target today?', 'Dinner under $5', 'Add milk to the shopping list', 'How much budget is left?']
 
 function load(): Msg[] {
   try {
@@ -86,6 +87,20 @@ export default function ChefScreen() {
     push({ id: newId(), from: 'me', text: t })
     void run(async () => fromReply(await ask({ repo, pantry, today: today(), now: nowHHMM() }, t)))
   }
+
+  // a question sent from another screen (Today's Ask Chef): ask it once, then forget it
+  const location = useLocation()
+  const navigate = useNavigate()
+  const incoming = (location.state as { ask?: string } | null)?.ask
+  useEffect(() => {
+    if (!incoming) return
+    const id = setTimeout(() => {
+      navigate('.', { replace: true, state: null })
+      say(incoming)
+    })
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming])
 
   const h: Handlers = {
     busy,

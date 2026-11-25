@@ -26,7 +26,7 @@ beforeEach(async () => {
   const { record } = await proposeTargets(repo, TODAY)
   const t = await approveTargets(repo, record.id)
   await assignMeal(repo, { date: TODAY, slot: 'dinner', time: '18:00', recipeId: BOWL, portionScale: 1, targetsId: t.id, targetsVersion: t.version! })
-  deps = { repo, pantry, today: TODAY }
+  deps = { repo, pantry, today: TODAY, now: '08:00' }
 })
 
 async function scanWoolworths() {
@@ -280,5 +280,53 @@ describe('Chef: pantry, shopping, weigh-ins, money', () => {
   it('not understood: three closest examples', async () => {
     const r = as(await ask(deps, 'chicken'), 'unknown')
     expect(r.examples).toHaveLength(3)
+  })
+})
+
+describe('Chef: finding meals', () => {
+  it('high-protein lunch ideas: lunch recipes, most protein first, each can be planned', async () => {
+    const r = as(await ask(deps, 'High-protein lunch ideas'), 'answer')
+    expect(r.text).toMatch(/^For today’s lunch \(most protein first\)/)
+    const p = r.options!.map((o) => Number(o.detail!.match(/(\d+) g protein/)![1]))
+    expect(p).toEqual([...p].sort((a, b) => b - a))
+    const done = as(await r.options![0].run(), 'done')
+    expect(done.text).toContain('today’s lunch')
+  })
+
+  it('“I have chicken, rice and broccoli”: recipes using all three, pantry first', async () => {
+    await scanWoolworths()
+    const r = as(await ask(deps, 'I have chicken, rice and broccoli'), 'answer')
+    expect(r.text).toMatch(/with chicken, rice, broccoli/)
+    expect(r.options!.length).toBeGreaterThan(0)
+  })
+
+  it('price and time limits are applied; with no prices yet it says why', async () => {
+    const r = as(await ask(deps, 'dinner tomorrow under $5'), 'answer')
+    expect(r.options).toBeUndefined()
+    expect(r.text).toMatch(/Prices come from your scanned receipts/)
+    await scanWoolworths()
+    const q = as(await ask(deps, 'something quick for dinner tomorrow'), 'answer')
+    for (const o of q.options!) expect(Number(o.detail!.match(/(\d+) min/)![1])).toBeLessThanOrEqual(20)
+  })
+
+  it('post-workout: the first meal after a training session', async () => {
+    const choice = await dayChoice(repo, TODAY)
+    const r = as(await ask(deps, 'post-workout meal'), 'answer')
+    expect(choice.dayType).toBe('training')
+    expect(r.text).toMatch(/today’s lunch .*after training/) // training 12:15, lunch 14:00
+  })
+
+  it('reach my protein target: how much is left and the highest-protein options', async () => {
+    const r = as(await ask(deps, 'How do I reach my protein target today?'), 'answer')
+    expect(r.text).toMatch(/^\d+ g protein to go today/)
+    expect(r.options!.length).toBe(3)
+  })
+
+  it('substitutes: weight-for-weight swaps, marking what is in the pantry', async () => {
+    await scanWoolworths()
+    const r = as(await ask(deps, 'what can I use instead of broccoli?'), 'answer')
+    expect(r.lines![0]).toMatch(/Green beans|Bok choy|Spinach/)
+    const none = as(await ask(deps, 'substitute for unicorn dust'), 'answer')
+    expect(none.text).toMatch(/don’t have a substitute list/)
   })
 })

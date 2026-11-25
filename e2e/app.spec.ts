@@ -691,6 +691,31 @@ test('Chef: rest day with confirm and undo, swap a meal, add to the shopping lis
   await expect(page.getByRole('log').locator(':scope > li').last().getByRole('button')).toHaveCount(3)
 })
 
+test('Ask Chef from Today: chips and typed questions answered in Chef; plan a suggestion; substitutes; protein target', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-11-26T09:00:00')) // Thursday, before lunch
+  await approveTargets(page)
+  await page.goto('/#/')
+  const card = page.getByRole('region', { name: 'Ask Chef' })
+  await card.getByRole('button', { name: 'High-protein lunch ideas' }).click()
+  await expect(page).toHaveURL(/#\/chef/)
+  await expect(page.getByText(/^For today’s lunch \(most protein first\):$/)).toBeVisible()
+  const options = page.getByRole('log').locator(':scope > li').last().getByRole('button')
+  const pick = (await options.first().locator('span').first().textContent())!
+  await options.first().click()
+  await expect(page.getByText(`${pick} is on today’s lunch`, { exact: false })).toBeVisible()
+
+  await page.goto('/#/')
+  await page.getByLabel('Ask Chef a question').fill('I have chicken, rice and broccoli')
+  await page.getByRole('button', { name: 'Ask', exact: true }).click()
+  await expect(page.getByText(/with chicken, rice, broccoli/)).toBeVisible()
+  await tellChef(page, 'what can I use instead of broccoli?')
+  await expect(page.getByText(/Swaps that work weight for weight: .*Green bean/)).toBeVisible()
+  await tellChef(page, 'How do I reach my protein target today?')
+  await expect(page.getByText(/^\d+ g protein to go today/)).toBeVisible()
+  await tellChef(page, 'dinner under $5')
+  await expect(page.getByText(/Prices come from your scanned receipts/)).toBeVisible()
+})
+
 test('Expenses: add by hand, set a budget, get warned on Today, delete', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-11-26T10:00:00'))
   await page.goto('/#/expenses')

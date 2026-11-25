@@ -22,6 +22,7 @@ import { BudgetAlerts } from './expenses/BudgetAlerts'
 import { StaleTargets } from './plan/StaleTargets'
 import { EatBar, SnacksCard } from './today/Eating'
 import { SuggestCard } from './today/Suggest'
+import { AskChef } from './today/AskChef'
 import { MealPantryChip } from './today/MealPantryChip'
 import { BackupReminder } from './today/BackupReminder'
 import { MAX_DAYS_BACK, loadDay } from '../lib/eating'
@@ -148,6 +149,7 @@ export default function TodayScreen() {
             </div>
           </Card>
 
+          {date === now && <AskChef />}
           {date === now && <SuggestCard />}
 
           {SLOTS.map((slot) => {
