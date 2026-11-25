@@ -33,6 +33,7 @@ export type Intent =
   | { type: 'quick'; date: string; item: string; qty?: number; unit?: QtyUnit }
   | { type: 'undoEaten'; date: string; slot?: SlotName; item?: string }
   | { type: 'eatenToday'; date: string }
+  | { type: 'backup' }
 
 export type Interpretation = { kind: 'intent'; intent: Intent } | { kind: 'unknown'; closest: string[] }
 
@@ -65,6 +66,7 @@ export const EXAMPLES = [
   'I had a banana',
   'Skipped smoko',
   'What have I eaten today?',
+  'Back up my data',
 ]
 
 const has = (s: string, re: RegExp) => re.test(s)
@@ -133,6 +135,9 @@ export function interpret(raw: string, today: string): Interpretation {
       return ok({ type: 'weigh', kg, timeOfDay })
     }
   }
+
+  // backup: "back up my data", "when did I last back up"
+  if (has(t, /\b(back ?up|backed up|backups?|export (my )?data|save (a copy of )?my data)\b/) && !has(t, /\b(list|shopping)\b/)) return ok({ type: 'backup' })
 
   // eating: what have I eaten, undo a log, skipped, ate a meal
   if (has(t, /\b(what|how much|how many calories)\b.*\b(have i|did i|i have|i)\s+(eaten|eat|had|ate)\b/)) return ok({ type: 'eatenToday', date })

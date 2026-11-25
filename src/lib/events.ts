@@ -2,6 +2,7 @@
 export interface AppEvents {
   'targets-approved': { targetsId: string; version: number }
   'data-changed': { table: string }
+  'data-replaced': Record<string, never> // a backup was restored: drop anything held in memory
 }
 
 type AnyHandler = (payload: unknown) => void

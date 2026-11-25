@@ -89,15 +89,30 @@ export function openDb(name = 'personal-chef'): ChefDB {
   db.version(1).stores(STORES_V1)
   // v2: meal_consumption gains a date (and may be a quick food with no planned meal)
   db.version(2).stores(STORES).upgrade(async (tx) => {
-    const meals = tx.table('planned_meals')
+    const planned = await tx.table('planned_meals').toArray()
     const rows = await tx.table('meal_consumption').toArray()
-    for (const c of rows) {
-      if (c.date) continue
-      const pm = c.plannedMealId ? await meals.get(c.plannedMealId) : undefined
-      await tx.table('meal_consumption').put({ ...c, date: pm?.date ?? String(c.at).slice(0, 10), time: pm?.time ?? String(c.at).slice(11, 16), slot: pm?.slot })
-    }
+    for (const c of migrateConsumptionV2(rows, planned)) await tx.table('meal_consumption').put(c)
   })
   return db
+}
+
+export const SCHEMA_VERSION = 2
+
+/** v1 -> v2: consumptions gain date, time and slot from their planned meal. Shared by the Dexie upgrade and restore. */
+export function migrateConsumptionV2<T extends Record<string, unknown>>(rows: T[], planned: Array<Record<string, unknown>>): T[] {
+  const byId = new Map(planned.map((p) => [p.id, p]))
+  return rows.map((c) => {
+    if (c.date) return c
+    const pm = c.plannedMealId ? byId.get(c.plannedMealId) : undefined
+    return { ...c, date: pm?.date ?? String(c.at).slice(0, 10), time: pm?.time ?? String(c.at).slice(11, 16), slot: pm?.slot }
+  })
+}
+
+/** Bring a backup's tables up to the current schema, in memory. */
+export function migrateTables(tables: Record<string, Array<Record<string, unknown>>>, fromVersion: number): Record<string, Array<Record<string, unknown>>> {
+  let t = tables
+  if (fromVersion < 2) t = { ...t, meal_consumption: migrateConsumptionV2(t.meal_consumption ?? [], t.planned_meals ?? []) }
+  return t
 }
 
 /**

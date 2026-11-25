@@ -5,7 +5,7 @@
 import Fuse from 'fuse.js'
 import type { Pantry } from '../db/pantry'
 import { newId, type Repo } from '../db/repo'
-import { FIXED_BREAKFAST_ID, PROFILE_ID } from '../db/seed'
+import { FIXED_BREAKFAST_ID, PROFILE_ID, SETTINGS_ID } from '../db/seed'
 import type { InventoryLot, PlannedMeal, Product, QtyUnit, Recipe, Workout } from '../db/types'
 import { CONTRACT_VERSION, SLOTS, type DayTargets, type SlotName } from '../engines/contract'
 import { periodRange, total } from '../engines/cost/engine'
@@ -15,6 +15,7 @@ import { formatQty } from '../engines/shopping/engine'
 import { EXAMPLES, interpret, type Intent } from '../engines/chef/intents'
 import { SLOT_LABEL, SLOT_TAGS, assignMeal, clearMeal, targetsForDate } from './day'
 import { budgetStatuses } from './expenses'
+import { exportBackup } from './backup'
 import { loadProgress } from './progress'
 import { FLAG_LABEL, allRatings, rate, restoreRating } from './ratings'
 import { acceptDraft, buildDraft } from './planner'
@@ -85,6 +86,7 @@ export async function act(deps: ChefDeps, intent: Intent): Promise<Reply> {
     case 'quick': return quickFood(deps, intent.date, intent.item, intent.qty, intent.unit)
     case 'undoEaten': return undoLog(deps, intent.date, intent.slot, intent.item)
     case 'eatenToday': return eatenOn(deps, intent.date)
+    case 'backup': return backup(deps)
   }
 }
 
@@ -877,4 +879,25 @@ async function eatenOn(deps: ChefDeps, date: string): Promise<Reply> {
   for (const q of day.quick) lines.push(`${q.quick!.label}: ${Math.round(q.nutrition.energyKcal)} kcal`)
   if (!lines.length) return answer(`Nothing logged ${date === deps.today ? 'yet today' : `for ${dayLabel(date, deps.today)}`}. Say e.g. “I ate breakfast”.`)
   return answer(`${cap(dayLabel(date, deps.today))}: ${kcalLine(day.totals)} so far.`, { lines, link: { to: '/', label: 'See Today' } })
+}
+
+// ---------- backup ----------
+
+async function backup(deps: ChefDeps): Promise<Reply> {
+  const s = await deps.repo.get('settings', SETTINGS_ID)
+  const last = s?.lastBackupAt
+  const ago = last ? Math.floor((Date.parse(`${deps.today}T00:00:00Z`) - Date.parse(`${last.slice(0, 10)}T00:00:00Z`)) / 86400000) : null
+  return answer(
+    last ? `Your last backup was ${ago === 0 ? 'today' : ago === 1 ? 'yesterday' : `${ago} days ago`} (${dayLabel(last.slice(0, 10), deps.today)}).` : 'You haven’t backed up yet. Your data lives only on this phone.',
+    {
+      options: [{
+        label: 'Back up now (with photos)',
+        run: async () => {
+          const r = await exportBackup(deps.repo)
+          return { kind: 'done', text: `Saved ${r.name} to your downloads. Keep a copy off this phone.`, link: { to: '/settings', label: 'Backup settings' } }
+        },
+      }],
+      link: { to: '/settings', label: 'Backup & restore' },
+    },
+  )
 }

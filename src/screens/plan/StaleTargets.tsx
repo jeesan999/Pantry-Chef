@@ -3,9 +3,11 @@ import { useState } from 'react'
 import { Button, Notice } from '../../components/ui'
 import { repo, today } from '../../db/instance'
 import { reportion, staleTargets } from '../../lib/planner'
+import { on } from '../../lib/events'
 
 // Kept outside the component so Undo survives switching screens.
 let lastUndo: { undo: () => Promise<void>; count: number } | null = null
+on('data-replaced', () => { lastUndo = null })
 
 /** "Targets changed: re-portion upcoming meals?" Shown on Today and Plan after new targets are approved. */
 export function StaleTargets() {

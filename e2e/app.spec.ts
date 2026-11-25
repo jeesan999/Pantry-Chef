@@ -417,6 +417,70 @@ test('Eating: half a lunch from the pantry with leftover waste, undo, a snack, y
   await expect(page.getByText(/^Logged .*banana.*kcal/i)).toBeVisible()
 })
 
+test('Backup: zip with a photo, restore brings deleted data back, undo restore, a damaged file is refused, reminder', async ({ page }, info) => {
+  test.setTimeout(90_000)
+  await page.clock.setFixedTime(new Date('2026-11-26T09:00:00'))
+  await approveTargets(page)
+  // a weigh-in and a recipe photo
+  await page.goto('/#/progress')
+  await page.getByLabel('Weight (kg)').fill('80.4')
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByRole('button', { name: /^Delete 80\.4 kg/ })).toBeVisible()
+  await page.goto('/#/recipes/recipe:au-chicken-rice-bowl')
+  await page.locator('input[type=file]').setInputFiles('e2e/fixtures/test-receipt-woolworths.jpg')
+  await expect(page.getByRole('img', { name: 'Lemon chicken, rice and greens bowl' })).toBeVisible()
+
+  // back up
+  await page.goto('/#/settings')
+  await expect(page.getByTestId('last-backup')).toHaveText('never')
+  const dl = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Back up now (with photos)' }).click()
+  const file = info.outputPath('backup.zip')
+  await (await dl).saveAs(file)
+  await expect(page.getByText(/Saved personal-chef-backup-2026-11-26\.zip/)).toBeVisible()
+  await expect(page.getByTestId('last-backup')).not.toHaveText('never')
+
+  // lose some data, then restore
+  await page.goto('/#/progress')
+  await page.getByRole('button', { name: /^Delete 80\.4 kg/ }).click()
+  await expect(page.getByText('No measurements yet', { exact: false })).toBeVisible()
+  await page.goto('/#/settings')
+  await page.getByLabel('Choose a backup file').setInputFiles(file)
+  const sheet = page.getByRole('dialog')
+  await expect(sheet.getByText('Restore this backup?')).toBeVisible()
+  await expect(sheet.getByRole('row', { name: /Weigh-ins 1 0/ })).toBeVisible()
+  await expect(sheet.getByText(/1 photo/)).toBeVisible()
+  await sheet.getByLabel('Type REPLACE to confirm').fill('replace')
+  await sheet.getByRole('button', { name: 'Replace all data on this phone' }).click()
+  await expect(page.getByText(/^Restored\./)).toBeVisible()
+  await page.goto('/#/progress')
+  await expect(page.getByRole('button', { name: /^Delete 80\.4 kg/ })).toBeVisible()
+  await page.goto('/#/recipes/recipe:au-chicken-rice-bowl')
+  await expect(page.getByRole('img', { name: 'Lemon chicken, rice and greens bowl' })).toBeVisible() // the photo came back
+
+  // undo the restore: back to the state just before it (no weigh-in)
+  await page.goto('/#/settings')
+  await page.getByRole('button', { name: 'Undo restore' }).click()
+  await expect(page.getByText('Your data is back as it was before the restore.')).toBeVisible()
+  await page.goto('/#/progress')
+  await expect(page.getByText('No measurements yet', { exact: false })).toBeVisible()
+
+  // a damaged file changes nothing
+  const bad = info.outputPath('bad.zip')
+  const { writeFileSync } = await import('node:fs')
+  writeFileSync(bad, 'PK this is not really a zip')
+  await page.goto('/#/settings')
+  await page.getByLabel('Choose a backup file').setInputFiles(bad)
+  await expect(page.getByText('This backup can’t be restored')).toBeVisible()
+  await expect(page.getByText('Nothing on this phone was changed.')).toBeVisible()
+
+  // a week and a day later, Today reminds
+  await page.clock.setFixedTime(new Date('2026-12-04T09:00:00'))
+  await page.goto('/#/')
+  await page.reload()
+  await expect(page.getByText('Last backup 8 days ago.')).toBeVisible()
+})
+
 async function tellChef(page: Page, text: string) {
   await page.getByLabel('Message Chef').fill(text)
   await page.getByLabel('Message Chef').press('Enter')

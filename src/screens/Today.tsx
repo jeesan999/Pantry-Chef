@@ -17,6 +17,7 @@ import { budgetStatuses } from '../lib/expenses'
 import { BudgetAlerts } from './expenses/BudgetAlerts'
 import { StaleTargets } from './plan/StaleTargets'
 import { EatBar, SnacksCard } from './today/Eating'
+import { BackupReminder } from './today/BackupReminder'
 import { MAX_DAYS_BACK, loadDay } from '../lib/eating'
 import { addDays as addDaysTo } from '../engines/nutrition/engine'
 
@@ -77,6 +78,7 @@ export default function TodayScreen() {
       }
     >
       <StaleTargets />
+      <BackupReminder />
       <BudgetAlerts statuses={budgets} link />
       {lastWeighIn && lastWeighIn <= addDaysTo(now, -7) && (
         <Notice tone="stone">No weigh-in for a week. <Link to="/progress" className="font-medium underline">Log one</Link> to keep your trend useful.</Notice>

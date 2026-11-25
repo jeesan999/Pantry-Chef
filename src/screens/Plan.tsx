@@ -11,6 +11,7 @@ import { SLOT_LABEL, targetsForDate, weekDates } from '../lib/day'
 import { useApprovedTargets, useDayChoices } from '../lib/hooks'
 import { acceptDraft, buildDraft, slotKey, type Draft, type DraftParams } from '../lib/planner'
 import { currentList, generateList } from '../lib/shopping'
+import { on } from '../lib/events'
 import { StaleTargets } from './plan/StaleTargets'
 
 const STORE = 'plan-draft'
@@ -36,6 +37,7 @@ function saveParams(p: DraftParams | null) {
 
 // The last accepted plan, kept outside the component so Undo survives switching screens.
 let lastAccepted: { undo: () => Promise<void>; written: number; from: string; to: string } | null = null
+on('data-replaced', () => { lastAccepted = null })
 
 export default function PlanScreen() {
   const now = today()

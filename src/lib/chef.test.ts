@@ -269,6 +269,14 @@ describe('Chef: pantry, shopping, weigh-ins, money', () => {
     expect(r.lines).toEqual(expect.arrayContaining(['Latest weigh-in: 80.4 kg', expect.stringMatching(/^Trend: Need 8 weigh-ins/)]))
   })
 
+  it('backup: says when, offers a button', async () => {
+    const r = as(await ask(deps, 'when did I last back up'), 'answer')
+    expect(r.text).toMatch(/haven’t backed up yet/)
+    expect(r.options![0].label).toBe('Back up now (with photos)')
+    await repo.update('settings', 'settings:me', { lastBackupAt: '2026-11-23T08:00:00.000Z' })
+    expect(as(await ask(deps, 'back up my data'), 'answer').text).toMatch(/3 days ago/)
+  })
+
   it('not understood: three closest examples', async () => {
     const r = as(await ask(deps, 'chicken'), 'unknown')
     expect(r.examples).toHaveLength(3)

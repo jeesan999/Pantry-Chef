@@ -4,7 +4,7 @@ An installable, offline-first web app for meal planning, nutrition targets, pant
 All data stays on your device. No accounts, API keys or paid services. Once installed, the app makes
 no network requests (a Content Security Policy blocks them).
 
-## Status: Phase 9 (eating log)
+## Status: Phase 10 (backup & restore)
 
 - 11 screens with navigation; Today, Plan, Recipes, Pantry, Goals & Targets, Progress (weigh-ins) and Settings work now;
   Scan Receipt, Expenses, Shopping List, Chef and Progress work too.
@@ -39,6 +39,12 @@ no network requests (a Content Security Policy blocks them).
   frozen when logged, each day keeps a nutritional record, and every log can be undone. Today can step back 7 days and
   shows eaten or planned totals. Progress calibrates maintenance from real intake once 10 days are fully logged.
   Logic: `src/engines/eating/engine.ts`, `src/lib/eating.ts`. The database is now schema version 2.
+- Backup & restore (Settings): a .zip of every table plus recipe photos and receipt images, with a manifest and
+  SHA-256 checksums; “Data only (JSON)” and, where supported, “Share backup…”. Restoring checks the file (app, version,
+  checksums, every row, every link), shows a preview, keeps a safety copy of what was there, then replaces all data in
+  one transaction (rolled back on any problem); “Undo restore” brings the safety copy back. Older backups are upgraded
+  on the way in; backups from a newer app are refused. Today reminds you when a backup is due (every 7 days by
+  default), and Chef answers “back up my data”. Logic: `src/engines/backup/format.ts`, `src/lib/backup.ts`.
 - 30-table IndexedDB database (Dexie) with foreign keys, validation, transactions and an append-only pantry ledger
   enforced in `src/db/repo.ts` and `src/db/pantry.ts`.
 - Engine A (Nutrition) in `src/engines/nutrition/engine.ts`: pure functions, emits the `TargetSet` contract in

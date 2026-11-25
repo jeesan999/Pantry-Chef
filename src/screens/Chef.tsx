@@ -3,6 +3,7 @@ import { Page } from '../components/ui'
 import { pantry, repo, today } from '../db/instance'
 import { newId } from '../db/repo'
 import { ask, type Option, type Reply } from '../lib/chef'
+import { on } from '../lib/events'
 import { Chip, Thread, type Handlers, type Msg } from './chef/Thread'
 
 const STORE = 'chef-thread'
@@ -26,6 +27,7 @@ interface Live { options?: Option[]; apply?: () => Promise<{ text: string; undo?
 
 // Kept outside the component so actions survive switching screens; a reload clears them.
 const LIVE = new Map<string, Live>()
+on('data-replaced', () => LIVE.clear()) // a restore makes held actions meaningless
 
 export default function ChefScreen() {
   const [msgs, setMsgs] = useState<Msg[]>(load)

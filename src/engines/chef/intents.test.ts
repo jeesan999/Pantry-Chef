@@ -152,6 +152,10 @@ describe('interpret', () => {
     ['replan the week from scratch', { type: 'plan', week: 'this', replan: true }],
     ['replan friday', { type: 'plan', date: '2026-11-27', replan: true }],
     ['plan meals for saturday', { type: 'plan', date: '2026-11-28', replan: true }],
+    // backup
+    ['back up my data', { type: 'backup' }],
+    ['when did I last back up?', { type: 'backup' }],
+    ['make a backup', { type: 'backup' }],
     // eating
     ['I ate lunch', { type: 'ate', date: '2026-11-26', slot: 'lunch', fraction: 1, recipe: undefined }],
     ['had half my dinner', { type: 'ate', slot: 'dinner', fraction: 0.5 }],
