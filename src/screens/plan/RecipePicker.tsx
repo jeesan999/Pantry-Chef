@@ -109,6 +109,10 @@ export function RecipePicker({ day, slot, onPick, onClose }: { day: DaySummary; 
       <ul className="mt-1 divide-y divide-stone-100">
         {list.map((x) => {
           const missing = x.a.lines.filter((l) => l.status !== 'available')
+          // fit: does this meal stay within what the day still needs, with protein in this meal's range?
+          const overKcal = x.per.energyKcal > Math.max(0, without.kcal) * 1.05
+          const protOk = x.per.proteinG >= st.proteinG[0] * 0.9 && x.per.proteinG <= st.proteinG[1] * 1.1
+          const fit = overKcal ? { tone: 'red' as const, text: 'more than the day has left' } : protOk ? { tone: 'leaf' as const, text: 'good fit' } : { tone: 'ember' as const, text: x.per.proteinG < st.proteinG[0] ? 'low in protein for this meal' : 'more protein than this meal needs' }
           return (
             <li key={x.r.id}>
               <button type="button" onClick={() => onPick(x.r.id)} className="flex w-full gap-3 py-2.5 text-left" aria-label={`Choose ${x.r.name}`}>
@@ -118,6 +122,7 @@ export function RecipePicker({ day, slot, onPick, onClose }: { day: DaySummary; 
                     <span className="truncate font-medium text-stone-800">{x.r.name}</span>
                     {current?.recipe?.id === x.r.id && <Badge>current</Badge>}
                     {x.favourite && <Badge tone="red">♥</Badge>}
+                    <Badge tone={fit.tone}>{fit.text}</Badge>
                   </span>
                   <span className="tabular block text-xs text-stone-600">
                     {Math.round(x.per.energyKcal)} kcal ({pct(x.per.energyKcal, without.kcal)}) · P {Math.round(x.per.proteinG)} g ({pct(x.per.proteinG, without.p)}) · C {Math.round(x.per.carbsG)} g · F {Math.round(x.per.fatG)} g

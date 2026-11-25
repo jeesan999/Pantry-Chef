@@ -4,7 +4,29 @@ An installable, offline-first web app for meal planning, nutrition targets, pant
 All data stays on your device. No accounts, API keys or paid services. Once installed, the app makes
 no network requests (a Content Security Policy blocks them).
 
-## Status: Phase 10 (backup & restore)
+## Status: Phase 10 plus improvements (stages A–G)
+
+- Design: a refreshed layout (side navigation on wide screens), five colour themes with live previews and Light,
+  Night or System mode, remembered on the device and painted before the first frame. Contrast is checked in tests.
+- Suggestions (Today): the next meal ranked by the planner from what's still needed today, training or rest, your
+  goal, pantry stock, dates, ratings and prep time; fully cookable and dated-soon food first.
+- Pantry check on every meal and recipe: each ingredient available, partly (how much) or missing; add the missing to
+  the shopping list, swap an ingredient for one in your pantry (weight for weight), cook it, or show recipes you can
+  make now. Looking never takes anything from the pantry.
+- Plan: 4 days or a week. Choose any meal from a recipe browser (protein, calories, carbs, time, cost and pantry
+  filters, fit to what the day still needs, missing ingredients shown first), suggest another, copy it to other days,
+  leave it unplanned; each change can be undone. Day totals and a nutrition overview per day, cost and items to buy.
+  Food cost per plan, day and meal, what comes from the pantry, what's still to buy and the weekly budget.
+  Generate the shopping list from the plan; bulk prep combines ingredients and schedules cooking within fridge limits.
+- Shopping list: change amounts (kept when the list updates), remove plan items (kept removed, can be put back),
+  pack counts from known pack sizes. Receipts still tick what you bought and fill the pantry.
+- Today: symbols instead of rings (a battery for energy, a flexed arm for protein, a grain sack for carbs, a drop for
+  fat), each with amount, target, %, what's left or over, and a status in words; a nutrition overview with fibre,
+  natural and added sugar, saturated fat, differences and cost; and an Ask Chef card.
+- Chef also answers: high-protein meal ideas, “I have chicken, rice and broccoli”, “dinner under $5”, “something
+  quick”, “post-workout meal”, leftovers, “what can I use instead of …”, “how do I reach my protein target?”.
+- 152 recipes plus the fixed breakfast, across 12 cuisines, each with full nutrition per serving
+  (`src/data/library/`); the structure takes 500+.
 
 - 11 screens with navigation; Today, Plan, Recipes, Pantry, Goals & Targets, Progress (weigh-ins) and Settings work now;
   Scan Receipt, Expenses, Shopping List, Chef and Progress work too.
@@ -15,13 +37,12 @@ no network requests (a Content Security Policy blocks them).
 - Shopping List: built from the meals planned for this week, next week or chosen days (plus the fixed breakfast),
   minus pantry stock that is still in date on the day of each meal, with estimated costs from your own prices.
   Tick items off, add extras; updating the list keeps both. Scanning a receipt ticks what it bought.
-  The list builder is a pure function in `src/engines/shopping/engine.ts`. The automatic meal planner is Phase 8.
+  The list builder is a pure function in `src/engines/shopping/engine.ts`.
 - Chef: type commands in your own words, e.g. “swap tonight’s dinner”, “something with salmon for lunch tomorrow”,
   “make tomorrow a rest day”, “train Saturday at 6am”, “use up what expires soon”, “what can I make with chicken
   and rice?”, “add milk to the shopping list”, “I threw out the spinach”, “I weigh 80.4 kg”, “what’s for dinner?”,
   “how much budget is left?”. A rule-based interpreter (`src/engines/chef/`) runs on the phone: no AI service, no
-  network. Nothing changes until you tap “Do it”, and every change can be undone. Marking meals as eaten is a later
-  phase.
+  network. Nothing changes until you tap “Do it”, and every change can be undone.
 - Progress: 7-day average weight (morning weigh-ins preferred), 4-week trend in kg/week, weight and waist charts,
   monthly table, target weight with progress and an estimated finish date, and delete for wrong entries. A targets
   check compares the trend with what your targets expect and, when they disagree by 100+ kcal a day, offers to
@@ -49,7 +70,6 @@ no network requests (a Content Security Policy blocks them).
   enforced in `src/db/repo.ts` and `src/db/pantry.ts`.
 - Engine A (Nutrition) in `src/engines/nutrition/engine.ts`: pure functions, emits the `TargetSet` contract in
   `src/engines/contract.ts`. Targets are proposed, then approved; only approval assigns a version.
-- 64 starter recipes across 8 cuisines plus the fixed breakfast (`src/data/recipes.ts`).
 
 ## Run it
 

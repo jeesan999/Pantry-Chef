@@ -716,6 +716,56 @@ test('Ask Chef from Today: chips and typed questions answered in Chef; plan a su
   await expect(page.getByText(/Prices come from your scanned receipts/)).toBeVisible()
 })
 
+test('Full journey: receipt → pantry → 4-day plan → shopping list → eat → Today and Chef agree; nothing deducted until eaten', async ({ page }) => {
+  test.setTimeout(150_000)
+  await page.clock.setFixedTime(new Date('2026-11-26T09:00:00'))
+  await approveTargets(page)
+  await page.goto('/#/scan')
+  await page.getByLabel('Choose a receipt photo').setInputFiles('e2e/fixtures/test-receipt-woolworths.jpg')
+  await expect(page.getByText('Check the receipt')).toBeVisible({ timeout: 90_000 })
+  await page.getByRole('button', { name: 'Save to pantry and expenses' }).click()
+  await expect(page.getByText(/items added to your pantry/)).toBeVisible()
+  const chickenStock = async () => {
+    await page.goto('/#/chef')
+    await tellChef(page, 'how much chicken do I have?')
+    const reply = page.getByRole('log').locator(':scope > li').last()
+    await expect(reply).toContainText(/You have/)
+    return (await reply.textContent())!
+  }
+  const before = await chickenStock()
+
+  // plan four days, put the chicken bowl on Thursday lunch from the recipe browser
+  await page.goto('/#/plan')
+  await page.getByRole('radio', { name: '4 days' }).click()
+  await page.getByRole('button', { name: 'Plan 4 days' }).click()
+  await page.getByRole('button', { name: 'Accept plan' }).click()
+  await expect(page.getByText(/Plan saved: 12 meals/)).toBeVisible()
+  await page.getByRole('button', { name: 'Options for Lunch on Thu, 26 Nov' }).click()
+  await page.getByRole('button', { name: 'Change recipe' }).click()
+  await page.getByLabel('Search recipes').fill('lemon chicken')
+  await page.getByRole('button', { name: /^Choose Lemon chicken, rice and greens bowl/ }).click()
+  await expect(page.getByTestId('meal-2026-11-26|lunch').getByRole('link')).toHaveText('Lemon chicken, rice and greens bowl')
+  await expect(page.getByText('From your pantry').locator('xpath=following-sibling::dd[1]')).not.toHaveText('$0.00')
+
+  // shopping list from the plan, minus the pantry; building it takes nothing from the pantry
+  await page.getByRole('button', { name: 'Generate shopping list' }).click()
+  await expect(page.getByRole('status')).toContainText(/Built from 12 planned meals and 4 breakfasts/)
+  await expect(page.getByText(/^Already in your pantry: \d+ items?/)).toBeVisible()
+  expect(await chickenStock()).toBe(before)
+
+  // eat Thursday's lunch: the pantry goes down, Today and Chef show it
+  await page.goto('/#/')
+  await page.getByRole('button', { name: 'Mark Lunch eaten' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Log it' }).click()
+  await expect(page.getByRole('radio', { name: 'Eaten', checked: true })).toBeVisible()
+  const protein = page.getByRole('img', { name: /^Protein / })
+  await expect.poll(async () => Number((await protein.getAttribute('aria-label'))!.match(/Protein (\d+)/)![1])).toBeGreaterThan(30) // the lunch, 40 g protein
+  const eaten = Number((await protein.getAttribute('aria-label'))!.match(/Protein (\d+)/)![1])
+  expect(await chickenStock()).not.toBe(before)
+  await tellChef(page, 'How do I reach my protein target today?')
+  await expect(page.getByText(new RegExp(`g protein to go today \\(${eaten} of \\d+ g eaten\\)`))).toBeVisible()
+})
+
 test('Expenses: add by hand, set a budget, get warned on Today, delete', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-11-26T10:00:00'))
   await page.goto('/#/expenses')
