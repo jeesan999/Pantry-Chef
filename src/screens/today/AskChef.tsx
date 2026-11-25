@@ -1,4 +1,5 @@
-import { ChefHat, Send } from 'lucide-react'
+import { Send } from 'lucide-react'
+import { Logo } from '../../components/Logo'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
@@ -11,8 +12,13 @@ export function AskChef() {
   const go = (text: string) => text.trim() && nav('/chef', { state: { ask: text.trim() } })
   return (
     <section aria-labelledby="ask-chef" className="rounded-2xl bg-leaf-700 p-4 text-on-accent shadow-raised">
-      <h2 id="ask-chef" className="flex items-center gap-2 text-base font-semibold"><ChefHat className="h-5 w-5" aria-hidden />Ask Chef</h2>
-      <p className="mt-0.5 text-sm opacity-90">Ask about meals, your pantry, protein or money, in your own words.</p>
+      <div className="flex items-center gap-3">
+        <Logo size={64} decorative />
+        <div>
+          <h2 id="ask-chef" className="text-base font-semibold">Ask Chef</h2>
+          <p className="mt-0.5 text-sm opacity-90">Ask about meals, your pantry, protein or money, in your own words.</p>
+        </div>
+      </div>
       <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); go(q) }}>
         <input value={q} onChange={(e) => setQ(e.target.value)} aria-label="Ask Chef a question" placeholder="e.g. I have chicken, rice and broccoli" enterKeyHint="send" autoComplete="off"
           className="block min-h-11 w-full rounded-xl border-0 bg-white px-3 text-ink placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-leaf-200" />

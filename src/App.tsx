@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BookOpen, CalendarDays, ChefHat, Ellipsis, House, Refrigerator, ScanLine, Settings, ShoppingCart, Target, TrendingUp, Wallet, type LucideIcon } from 'lucide-react'
 import { HashRouter, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Sheet, cx } from './components/ui'
+import { Logo } from './components/Logo'
 import { ModeToggle } from './screens/settings/AppearanceCard'
 import TodayScreen from './screens/Today'
 import PlanScreen from './screens/Plan'
@@ -63,6 +64,7 @@ function BottomNav() {
         </div>
       </nav>
       <Sheet open={more} onOpenChange={setMore} title="More">
+        <div className="mb-3 flex justify-center"><Logo size={72} /></div>
         <div className="grid grid-cols-3 gap-2">
           {extra.map((s) => (
             <button
@@ -92,7 +94,7 @@ function SideNav() {
   return (
     <nav aria-label="Main" className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-stone-200 bg-white px-3 py-5 lg:flex">
       <div className="mb-6 flex items-center gap-2.5 px-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-leaf-700 text-on-accent"><ChefHat className="h-5 w-5" aria-hidden /></span>
+        <Logo size={44} eager decorative />
         <span className="text-lg font-semibold tracking-tight text-stone-900">Pantry Chef</span>
       </div>
       {groups.map((g) => (
