@@ -5,7 +5,7 @@ import './index.css'
 import { initAppearance, syncFromSettings } from './theme/appearance'
 import App from './App'
 import { repo, today } from './db/instance'
-import { SETTINGS_ID, ensureInterimFoods, seedIfEmpty } from './db/seed'
+import { SETTINGS_ID, ensureInterimFoods, ensureStarterRecipes, seedIfEmpty } from './db/seed'
 import { ensureAfcdLoaded } from './data/afcd'
 
 async function start() {
@@ -15,6 +15,7 @@ async function start() {
     await seedIfEmpty(repo, today())
     syncFromSettings((await repo.get('settings', SETTINGS_ID))?.appearance as never)
     await ensureInterimFoods(repo)
+    await ensureStarterRecipes(repo)
     await ensureAfcdLoaded(repo)
     // Ask the browser not to clear this site's data under storage pressure.
     if (navigator.storage?.persist) await navigator.storage.persist().catch(() => false)

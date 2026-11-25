@@ -13,6 +13,8 @@ export interface StarterRecipe {
   servings: number
   ingredients: StarterIngredient[]
   method: string[]
+  protein?: string // main protein, for variety and filters
+  technique?: string // cooking technique
 }
 
 const g = (food: string, qty: number, label: string, flags?: Array<'cooked' | 'optional'>): StarterIngredient => [food, qty, 'g', label, flags]

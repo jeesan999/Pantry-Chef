@@ -62,6 +62,7 @@ export interface Settings {
   monthlyBudgetCents?: Cents
   backupReminderDays: number
   appearance?: { theme: string; mode: 'light' | 'dark' | 'system' } // colour theme and light/night mode
+  recipeLibrary?: number // which starter-recipe additions this install has received
   lastBackupAt?: string
   updatedAt: string
 }
@@ -309,6 +310,8 @@ export interface Recipe {
   servings: number
   slotTags: SlotTag[]
   fixedSlot?: SlotName
+  protein?: string // main protein: beef, chicken, lamb, pork, turkey, egg, fish, seafood, vegetarian, kangaroo
+  technique?: string // stir-fry, grill, roast, bake, braise, simmer, pan-fry, no-cook, steam, one-pot
   photo?: Blob
   starter: boolean
   createdAt: string

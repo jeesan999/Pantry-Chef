@@ -56,11 +56,11 @@ test('Today: fixed breakfast plus a chosen lunch updates the totals', async ({ p
   await expect.poll(async () => Number((await energy.getAttribute('aria-label'))!.match(/Energy (\d+)/)![1])).toBeGreaterThan(before + 300)
 })
 
-test('Recipes: 65 recipes, filter by cuisine, open and scale a recipe', async ({ page }) => {
+test('Recipes: 153 recipes, filter by cuisine, open and scale a recipe', async ({ page }) => {
   await page.goto('/#/recipes')
-  await expect(page.getByText('65 recipes')).toBeVisible()
+  await expect(page.getByText('153 recipes')).toBeVisible()
   await page.getByLabel('Cuisine').selectOption('Korean')
-  await expect(page.locator('ul li a')).toHaveCount(8)
+  await expect(page.locator('ul li a')).toHaveCount(15) // 8 original + 7 added
   await page.getByText('Beef bibimbap').click()
   await expect(page.getByRole('heading', { name: 'Beef bibimbap' })).toBeVisible()
   await expect(page.getByText('approximate')).toBeVisible()
@@ -700,7 +700,7 @@ test('works offline after install', async ({ page, context }) => {
   await page.reload()
   await expect(page.locator('h1')).toHaveText('Today')
   await page.goto('/#/recipes')
-  await expect(page.getByText('65 recipes')).toBeVisible()
+  await expect(page.getByText('153 recipes')).toBeVisible()
   await context.setOffline(false)
 })
 

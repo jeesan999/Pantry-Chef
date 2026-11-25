@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { INTERIM_FOODS, INTERIM_FOOD_ID, INTERIM_YIELDS } from './interimFoods'
-import { STARTER_RECIPES } from './recipes'
+import { ALL_RECIPES as STARTER_RECIPES, LIBRARY_RECIPES } from './library'
 import { recipeNutrition } from '../lib/nutrition'
 import type { RecipeIngredient } from '../db/types'
 
@@ -16,10 +16,21 @@ function calc(r: (typeof STARTER_RECIPES)[number]) {
 }
 
 describe('starter recipe library', () => {
-  it('has 64 recipes across 8 cuisines with unique keys', () => {
-    expect(STARTER_RECIPES).toHaveLength(64)
-    expect(new Set(STARTER_RECIPES.map((r) => r.cuisine)).size).toBe(8)
-    expect(new Set(STARTER_RECIPES.map((r) => r.key)).size).toBe(64)
+  it('has at least 150 recipes across 12 cuisines with unique keys', () => {
+    expect(STARTER_RECIPES.length).toBeGreaterThanOrEqual(150)
+    expect(new Set(STARTER_RECIPES.map((r) => r.cuisine))).toEqual(new Set(['Australian', 'Mediterranean', 'Indian', 'Thai', 'Chinese', 'Japanese', 'Korean', 'Mexican', 'Italian', 'Middle Eastern', 'Greek', 'European']))
+    expect(new Set(STARTER_RECIPES.map((r) => r.key)).size).toBe(STARTER_RECIPES.length)
+  })
+
+  it('the library covers every protein and meal, with steps and times', () => {
+    const proteins = new Set(LIBRARY_RECIPES.map((r) => r.protein))
+    for (const p of ['beef', 'chicken', 'lamb', 'pork', 'turkey', 'egg', 'fish', 'seafood', 'vegetarian']) expect(proteins, p).toContain(p)
+    for (const tag of ['breakfast', 'smoko', 'lunch', 'dinner'] as const) expect(LIBRARY_RECIPES.some((r) => r.slotTags.includes(tag)), tag).toBe(true)
+    for (const r of STARTER_RECIPES) {
+      expect(r.method.length, r.key).toBeGreaterThan(0)
+      expect(r.prepMin + r.cookMin, r.key).toBeGreaterThan(0)
+      expect(r.servings, r.key).toBe(1)
+    }
   })
 
   it('every ingredient resolves to a food and calculates', () => {

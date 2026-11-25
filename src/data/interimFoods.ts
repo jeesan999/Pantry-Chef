@@ -135,6 +135,19 @@ const ROWS: Row[] = [
   ['jam', 'Jam, fruit', 'na', 260, 0.4, 0, 0, 64, 60, 50, 1, 20, null, null, 'jam'],
   ['dark_chocolate', 'Chocolate, dark (70%)', 'na', 580, 8, 42, 25, 33, 28, 26, 11, 15, null, null, 'chocolate dark'],
   ['maple_syrup', 'Syrup, maple', 'na', 260, 0, 0, 0, 67, 60, 60, 0, 10, null, 1.32, 'syrup maple'],
+  // added with the recipe library expansion (approximate, replaced by AFCD values on import)
+  ['turkey_breast', 'Turkey, breast, lean flesh, raw', 'raw', 105, 23.6, 1, 0.3, 0, 0, 0, 0, 50, null, null, 'turkey breast lean raw'],
+  ['turkey_mince', 'Turkey, mince, raw', 'raw', 150, 19.5, 8, 2.3, 0, 0, 0, 0, 70, null, null, 'turkey mince raw'],
+  ['pork_mince', 'Pork, mince, raw', 'raw', 200, 19, 13.5, 5, 0, 0, 0, 0, 60, null, null, 'pork mince raw'],
+  ['pork_loin', 'Pork, loin steak, lean, raw', 'raw', 125, 22.5, 4, 1.4, 0, 0, 0, 0, 55, null, null, 'pork loin steak lean raw'],
+  ['lamb_mince', 'Lamb, mince, raw', 'raw', 210, 19, 15, 6.5, 0, 0, 0, 0, 70, null, null, 'lamb mince raw'],
+  ['chorizo', 'Sausage, chorizo', 'na', 455, 24, 38, 14, 2, 1, 0, 0, 1240, null, null, 'sausage chorizo'],
+  ['white_fish', 'Fish, white fillet (ling, basa), raw', 'raw', 85, 18.5, 1, 0.3, 0, 0, 0, 0, 70, null, null, 'fish ling fillet raw'],
+  ['kangaroo', 'Kangaroo, fillet, raw', 'raw', 98, 22.5, 1, 0.3, 0, 0, 0, 0, 50, null, null, 'kangaroo fillet raw'],
+  ['couscous', 'Couscous, dry', 'raw', 360, 12.5, 1.5, 0.2, 72, 1, 0, 5, 10, null, null, 'couscous dry'],
+  ['bulgur', 'Bulgur (burghul), dry', 'raw', 340, 12, 1.5, 0.3, 68, 0.4, 0, 12, 15, null, null, 'burghul dry'],
+  ['olives', 'Olives, kalamata', 'na', 160, 1.2, 16, 2.3, 2, 0, 0, 3, 1500, null, null, 'olive kalamata'],
+  ['edamame', 'Soybean, green (edamame), frozen', 'raw', 125, 11.5, 5.5, 0.7, 7, 2, 0, 5, 10, null, null, 'soybean green edamame'],
 ]
 
 export const INTERIM_FOOD_ID = (key: string) => `food:${key}`
