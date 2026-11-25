@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from 'motion/react'
-import { useId } from 'react'
+import { useId, type ReactNode } from 'react'
 import type { Nutrients } from '../db/types'
 import type { DayTargets } from '../engines/contract'
 import { GAUGE_TONE, gaugeStatus, type GaugeStatus } from '../lib/fit'
@@ -7,83 +7,56 @@ import { cx } from './ui'
 
 type Kind = 'energy' | 'protein' | 'carbs' | 'fat'
 
-type Pt = [number, number]
-type Seg = { p: Pt } | { c1: Pt; c2: Pt; p: Pt }
-
-/** A left-right symmetric outline from its right half (top centre, clockwise, ending at bottom centre). */
-function mirrored(start: Pt, right: Seg[]): string {
-  const f = (n: number) => +n.toFixed(2)
-  const pt = ([x, y]: Pt) => `${f(x)} ${f(y)}`
-  const mx = ([x, y]: Pt): Pt => [48 - x, y]
-  let d = `M${pt(start)}`
-  for (const s of right) d += 'c1' in s ? ` C${pt(s.c1)} ${pt(s.c2)} ${pt(s.p)}` : ` L${pt(s.p)}`
-  // the left half: the same segments mirrored, walked back up to the start
-  const from = [start, ...right.map((s) => s.p)]
-  for (let i = right.length - 1; i >= 0; i--) {
-    const s = right[i]
-    d += 'c1' in s ? ` C${pt(mx(s.c2))} ${pt(mx(s.c1))} ${pt(mx(from[i]))}` : ` L${pt(mx(from[i]))}`
-  }
-  return `${d} Z`
-}
-
-/** Bodybuilder in a front double-biceps pose: fists up beside the head, V-shaped torso, legs apart. */
-const BODYBUILDER =
-  'M19.4 6.1 a4.6 4.6 0 1 0 9.2 0 a4.6 4.6 0 1 0 -9.2 0 Z ' +
-  mirrored([24, 11], [
-    { p: [26.2, 11] },
-    { p: [26.6, 12.4] },
-    { c1: [28.2, 12.8], c2: [30, 12.8], p: [31.2, 13.6] }, // trapezius
-    { c1: [32.4, 9.6], c2: [37, 7.4], p: [39.2, 10.2] }, // biceps peak
-    { p: [39.2, 5.4] }, // inside of the forearm
-    { c1: [39, 2.4], c2: [41, 1], p: [43, 1.4] }, // fist
-    { c1: [45.2, 1.9], c2: [46.2, 3.8], p: [45.8, 6.2] },
-    { p: [46.2, 14.2] }, // outside of the forearm
-    { c1: [46.6, 18.2], c2: [44.2, 20.2], p: [41.2, 19.6] }, // elbow
-    { c1: [39.2, 19.6], c2: [37.2, 21], p: [35.2, 21.2] }, // under the upper arm to the armpit
-    { c1: [35.2, 27], c2: [32.2, 31], p: [30.2, 35] }, // lats tapering to the waist
-    { p: [30.4, 37.4] },
-    { c1: [32.4, 43], c2: [31.6, 49.6], p: [30.6, 54.2] }, // outer thigh and calf
-    { p: [27, 54.6] }, // foot
-    { c1: [26.6, 49.6], c2: [26.4, 44], p: [24, 40.6] }, // inner leg
-  ])
-
 /**
- * Symbols drawn in a 48 x 56 box: a bodybuilder for energy, a steak for protein, a bowl of rice for
- * carbs and a block of butter for fat. Each fills from the bottom like a liquid, in exact proportion
- * to the target (capped at full); going over is shown with a red outline and the amount over, never
- * by overfilling. `details` are drawn faintly on top (muscle lines, marbling, rice grains, edges).
+ * Food illustrations drawn in a 48 x 48 box: a plate of food for energy, a steak for protein, toast
+ * for carbs and an avocado for fat. Fixed food colours, so they read the same in light and dark mode.
  */
-const SHAPES: Record<Kind, { d: string; top: number; bottom: number; details?: string }> = {
-  energy: {
-    d: BODYBUILDER,
-    top: 1.4,
-    bottom: 54.6,
-    details: 'M19 21.5 Q24 24.5 29 21.5 M24 24 V35 M21 28.5 H27 M21.5 32 H26.5',
-  },
-  protein: {
-    // a large steak: a rounded, slightly uneven cut with its fat rim and a round marrow bone
-    d: 'M8 21 C6 13 16 8.5 26 9.5 C36 10.5 44.5 14 44 24 C43.6 31.5 40.5 35.5 38.5 39.5 C36.2 44.5 30 47.5 22 46.5 C12 45.5 4.5 40.5 4.5 32 C4.5 27.5 9 25.5 8 21 Z',
-    top: 9.5,
-    bottom: 47.5,
-    details: 'M11.5 21.5 C10.5 16 18 13 26 13.6 C34 14.2 40.5 17.5 40.4 24 C40 30.5 37 34 35.2 37.6 M26.5 27 a4.6 4.6 0 1 0 9.2 0 a4.6 4.6 0 1 0 -9.2 0 M29.3 27 a1.8 1.8 0 1 0 3.6 0 a1.8 1.8 0 1 0 -3.6 0',
-  },
-  carbs: {
-    // a mound of rice in a round bowl on a foot
-    d: 'M4 30 H7 C7 22 13 14 24 14 C35 14 41 22 41 30 H44 C44 41 36 48 28 49 V52 H20 V49 C12 48 4 41 4 30 Z',
-    top: 14,
-    bottom: 52,
-    details: 'M4 30 H44 M15.5 23 l2.2 -1 M21.5 18.6 l2.2 0.8 M28 21.4 l2.2 -1 M19.6 26.2 h2.4 M31 26.4 l2.2 0.8 M25 24.2 l1.8 -1.2 M34.5 22 l1.4 1.4',
-  },
-  fat: {
-    // a block of butter seen from above and to the side: top, front and end faces
-    d: 'M5 22 L19 14 L44 18.5 L44 36 L30.5 46 L5 40 Z',
-    top: 14,
-    bottom: 46,
-    details: 'M5 22 L30.5 28 L44 18.5 M30.5 28 V46 M9 23 L30.5 28.2',
-  },
+const ICONS: Record<Kind, ReactNode> = {
+  energy: (
+    <g>
+      <circle cx="24" cy="24" r="19" fill="#c9d3dc" />
+      <circle cx="24" cy="24" r="16.5" fill="#f4f7fa" />
+      <circle cx="24" cy="24" r="12" fill="none" stroke="#dde4ea" strokeWidth="1" />
+      {/* rice, salmon, greens and a carrot slice */}
+      <ellipse cx="19.5" cy="26.5" rx="6.5" ry="4.6" fill="#fbf6e9" stroke="#e7dcc0" strokeWidth="0.8" />
+      <ellipse cx="28.5" cy="18.5" rx="5.6" ry="4.4" fill="#f27b6b" />
+      <path d="M24.6 17 q3.9 -1.2 7.6 0.4 M24.8 19.6 q3.8 -1 7.4 0.6" stroke="#fde2dc" strokeWidth="1" fill="none" strokeLinecap="round" />
+      <ellipse cx="30.5" cy="26.4" rx="3.4" ry="2.4" fill="#2f9e44" transform="rotate(-30 30.5 26.4)" />
+      <ellipse cx="27" cy="28.6" rx="2.4" ry="1.7" fill="#40c057" transform="rotate(20 27 28.6)" />
+      <circle cx="17" cy="31.8" r="1.9" fill="#f59f00" />
+    </g>
+  ),
+  protein: (
+    <g>
+      <path d="M8 22 C7 14 17 10 27 10.5 C37 11 42.5 15.5 41.5 24 C40.6 31.5 34 37.5 24 37.5 C13.5 37.5 9 30 8 22 Z" fill="#9c2f3a" />
+      <path d="M11 22 C10.4 16 18.5 13 27 13.4 C35.4 13.8 39.3 17.2 38.6 23.6 C38 29.4 32.6 34.5 24 34.5 C15.4 34.5 11.6 28.4 11 22 Z" fill="#d9485a" />
+      <path d="M14 20 q5 -4.2 11 -2 q3.5 1.4 7 -0.6 M15 26 q4.5 2.6 9 0.4" stroke="#f3b7bf" strokeWidth="1.6" fill="none" strokeLinecap="round" />
+      <circle cx="31" cy="25" r="4.6" fill="#f4e7c8" />
+      <circle cx="31" cy="25" r="2" fill="#e2cf9f" />
+    </g>
+  ),
+  carbs: (
+    <g>
+      <path d="M11 22 C6.5 21 6 12 14 9.5 C18 8.2 21 9.6 24 9.6 C27 9.6 30 8.2 34 9.5 C42 12 41.5 21 37 22 L36 38 C36 40 34.6 41 32.6 41 H15.4 C13.4 41 12 40 12 38 Z" fill="#a8551c" />
+      <path d="M14.2 21.4 C11 20.4 11.2 14.6 16 13 C19 12 21.5 13.2 24 13.2 C26.5 13.2 29 12 32 13 C36.8 14.6 37 20.4 33.8 21.4 L33 36.4 C33 37.4 32.2 38 31.2 38 H16.8 C15.8 38 15 37.4 15 36.4 Z" fill="#f6d79a" />
+      <g fill="#dcb46a">
+        <circle cx="19" cy="20" r="0.9" /><circle cx="27" cy="18" r="0.9" /><circle cx="23" cy="25" r="0.9" />
+        <circle cx="29" cy="29" r="0.9" /><circle cx="19.5" cy="31" r="0.9" /><circle cx="25.5" cy="33.5" r="0.9" />
+      </g>
+    </g>
+  ),
+  fat: (
+    <g>
+      <path d="M24 5 C29.5 5 31.5 10.5 33.5 16 C35.8 22 40 25 40 31.5 C40 39.5 32.8 44 24 44 C15.2 44 8 39.5 8 31.5 C8 25 12.2 22 14.5 16 C16.5 10.5 18.5 5 24 5 Z" fill="#3f6212" />
+      <path d="M24 8.2 C28 8.2 29.5 12.6 31.2 17.4 C33.4 23.2 36.8 25.8 36.8 31.4 C36.8 37.8 31 41 24 41 C17 41 11.2 37.8 11.2 31.4 C11.2 25.8 14.6 23.2 16.8 17.4 C18.5 12.6 20 8.2 24 8.2 Z" fill="#a3d65c" />
+      <path d="M24 11.5 C27 11.5 28.2 15 29.6 19 C31.4 23.8 34 26 34 31 C34 36 29.6 38.4 24 38.4 C18.4 38.4 14 36 14 31 C14 26 16.6 23.8 18.4 19 C19.8 15 21 11.5 24 11.5 Z" fill="#e3f2a6" />
+      <circle cx="24" cy="30" r="6.6" fill="#7c3f12" />
+      <circle cx="22" cy="27.8" r="1.8" fill="#a5612b" />
+    </g>
+  ),
 }
 
-/** A wavy liquid surface at y = 0, from x = -24 to 72: covers the 48-wide box while sliding one wavelength (12). */
+/** A wavy liquid surface at y = 0, from x = -24 to 72: covers the 48-wide tile while sliding one wavelength (12). */
 const WAVE = `M-24 0 ${Array.from({ length: 15 }, (_, i) => `q3 ${i % 2 ? 1.6 : -1.6} 6 0`).join(' ')} q3 -1.6 6 0 V60 H-24 Z`
 
 const TONE_TEXT = { leaf: 'text-leaf-700', ember: 'text-ember-600', red: 'text-red-700', stone: 'text-stone-500', sky: 'text-sky-700' }
@@ -93,37 +66,35 @@ export function NutrientGauge({ kind, label, value, target, unit, expected = 1, 
   kind: Kind; label: string; value: number; target: number; unit: string; expected?: number; color: string
 }) {
   const id = useId()
-  const s = SHAPES[kind]
   const frac = target > 0 ? Math.max(0, Math.min(value / target, 1)) : 0
   const status = gaugeStatus(value, target, expected)
   const over = status === 'over'
-  const h = s.bottom - s.top
-  // the liquid's level; empty and full push the wave just past the shape so no sliver shows
-  const y = frac <= 0 ? s.bottom + 3 : frac >= 1 ? s.top - 3 : s.bottom - h * frac
+  // the liquid's level in the tile; empty and full push the wave just past the edge so no sliver shows
+  const y = frac <= 0 ? 51 : frac >= 1 ? -3 : 48 - 48 * frac
   const still = useReducedMotion()
   const pct = target > 0 ? Math.round((value / target) * 100) : 0
   const left = Math.round(target - value)
   const fmtN = (n: number) => Math.round(n).toLocaleString('en-AU')
   return (
     <div className="flex flex-col items-center text-center">
-      <svg width={52} height={60} viewBox="0 0 48 56" role="img" aria-label={`${label} ${Math.round(value)} of ${Math.round(target)} ${unit}, ${pct}%, ${status}`} className="overflow-visible">
+      <svg width={56} height={56} viewBox="0 0 48 48" role="img" aria-label={`${label} ${Math.round(value)} of ${Math.round(target)} ${unit}, ${pct}%, ${status}`}>
         <defs>
-          <clipPath id={`${id}c`}><path d={s.d} /></clipPath>
+          <clipPath id={`${id}c`}><rect width="48" height="48" rx="12" /></clipPath>
         </defs>
-        <path d={s.d} style={{ fill: 'var(--color-stone-100)' }} />
+        {/* tinted tile; the liquid rises in it as the day's total grows */}
+        <rect width="48" height="48" rx="12" style={{ fill: `color-mix(in srgb, ${color} 14%, var(--color-white))` }} />
         <g clipPath={`url(#${id}c)`}>
-          <motion.g initial={{ y: s.bottom + 3 }} animate={{ y }} transition={{ duration: 0.8, ease: 'easeOut' }}>
-            {/* back wave, lighter and moving the other way, then the front wave */}
+          <motion.g initial={{ y: 51 }} animate={{ y }} transition={{ duration: 0.8, ease: 'easeOut' }}>
             <g transform="translate(0 -1)">
-              <motion.path d={WAVE} style={{ fill: color }} opacity={0.4} initial={{ x: -12 }} animate={still ? { x: -12 } : { x: [-12, 0] }} transition={{ duration: 3.2, ease: 'linear', repeat: still ? 0 : Infinity }} />
+              <motion.path d={WAVE} style={{ fill: color }} opacity={0.18} initial={{ x: -12 }} animate={still ? { x: -12 } : { x: [-12, 0] }} transition={{ duration: 3.2, ease: 'linear', repeat: still ? 0 : Infinity }} />
             </g>
             <g transform="translate(0 0.8)">
-              <motion.path d={WAVE} style={{ fill: color }} initial={{ x: 0 }} animate={still ? { x: 0 } : { x: [0, -12] }} transition={{ duration: 2.4, ease: 'linear', repeat: still ? 0 : Infinity }} />
+              <motion.path d={WAVE} style={{ fill: color }} opacity={0.32} initial={{ x: 0 }} animate={still ? { x: 0 } : { x: [0, -12] }} transition={{ duration: 2.4, ease: 'linear', repeat: still ? 0 : Infinity }} />
             </g>
           </motion.g>
         </g>
-        {s.details && <path d={s.details} fill="none" strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round" style={{ stroke: 'var(--color-stone-400)' }} opacity={0.75} />}
-        <path d={s.d} fill="none" strokeWidth={over ? 2.5 : 1.5} strokeLinejoin="round" style={{ stroke: over ? 'var(--color-red-600)' : 'var(--color-stone-300)' }} />
+        <g transform="translate(7 7) scale(0.708)">{ICONS[kind]}</g>
+        {over && <rect x="1" y="1" width="46" height="46" rx="11" fill="none" strokeWidth={2} style={{ stroke: 'var(--color-red-600)' }} />}
       </svg>
       <span className="mt-1 text-xs font-semibold text-stone-800">{label}</span>
       <span className="tabular text-sm font-semibold leading-tight text-stone-900">{fmtN(value)}</span>
