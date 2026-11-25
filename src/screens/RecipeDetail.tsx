@@ -3,8 +3,10 @@ import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { RecipeArt } from '../components/RecipeArt'
 import { RatingControls } from '../components/RatingControls'
+import { PantryCheck } from '../components/PantryCheck'
+import { Refrigerator } from 'lucide-react'
 import { Badge, Button, Card, Notice, Page, fmt } from '../components/ui'
-import { db, repo } from '../db/instance'
+import { db, repo, today } from '../db/instance'
 import { nowIso } from '../db/repo'
 import { downscaleImage } from '../lib/image'
 import { ingredientGrams, recipeNutrition, scaleNutrients } from '../lib/nutrition'
@@ -113,7 +115,11 @@ export default function RecipeDetailScreen() {
             )
           })}
         </ul>
-        <p className="tabular mt-2 text-xs text-stone-500">Whole recipe at {s} servings: {fmt.kcal(total.energyKcal)}, {fmt.g(total.proteinG)} protein</p>
+        <p className="tabular mt-2 text-xs text-stone-500">Whole recipe at {s} serving{s === 1 ? '' : 's'}: {fmt.kcal(total.energyKcal)}, {fmt.g(total.proteinG)} protein</p>
+      </Card>
+
+      <Card title={`Pantry check for ${s} serving${s === 1 ? '' : 's'}`} icon={Refrigerator}>
+        <PantryCheck recipeId={recipe.id} portionScale={s} date={today()} />
       </Card>
 
       {!recipe.fixedSlot && <RatingControls recipeId={recipe.id} />}

@@ -2,7 +2,11 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { RecipeArt } from '../components/RecipeArt'
-import { Badge, Button, Card, Notice, Page, RangeBar, Ring, Sheet, fmt } from '../components/ui'
+import { Badge, Button, Card, Notice, Page, RangeBar, Sheet, fmt } from '../components/ui'
+import { NutrientGauges } from '../components/NutrientGauges'
+import { DaySnapshot } from '../components/DaySnapshot'
+import { expectedByNow } from '../lib/fit'
+import { daySummaries } from '../lib/planOps'
 import { db, repo, today } from '../db/instance'
 import { FIXED_BREAKFAST_ID } from '../db/seed'
 import type { PlannedMeal, Recipe } from '../db/types'
@@ -17,9 +21,18 @@ import { budgetStatuses } from '../lib/expenses'
 import { BudgetAlerts } from './expenses/BudgetAlerts'
 import { StaleTargets } from './plan/StaleTargets'
 import { EatBar, SnacksCard } from './today/Eating'
+import { SuggestCard } from './today/Suggest'
+import { AskChef } from './today/AskChef'
+import { MealPantryChip } from './today/MealPantryChip'
 import { BackupReminder } from './today/BackupReminder'
 import { MAX_DAYS_BACK, loadDay } from '../lib/eating'
+import { loadMealContext, mealNutrition } from '../lib/meals'
 import { addDays as addDaysTo } from '../engines/nutrition/engine'
+
+const nowTime = () => {
+  const d = new Date()
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
 
 export default function TodayScreen() {
   const now = today()
@@ -29,10 +42,23 @@ export default function TodayScreen() {
   const approved = useApprovedTargets()
   const profile = useProfile()
   const nutrition = useAllRecipeNutrition()
+  const mctx = useLiveQuery(() => loadMealContext(repo))
+  // a planned meal's nutrition, with any ingredient swaps
+  const mealPer = (m: { recipe?: Recipe; scale: number; planned?: PlannedMeal }) => {
+    if (m.planned?.substitutions && Object.keys(m.planned.substitutions).length && mctx) return mealNutrition(mctx, m.planned).n
+    const n = m.recipe && nutrition?.get(m.recipe.id)
+    return n ? scaleNutrients(n.perServing, m.scale) : null
+  }
   const recipes = useLiveQuery(() => db.recipes.toArray())
   const planned = useLiveQuery(() => db.planned_meals.where('date').equals(date).toArray(), [date])
   const [picking, setPicking] = useState<SlotName | null>(null)
   const budgets = useLiveQuery(() => budgetStatuses(repo, date), [date])
+  const dayCost = useLiveQuery(async () => {
+    if (!approved) return null
+    await Promise.all([db.planned_meals.count(), db.price_history.count()])
+    const [d] = await daySummaries(repo, [date])
+    return { cents: d.costCents, unpriced: d.unpriced }
+  }, [date, approved?.id, JSON.stringify(planned?.map((p) => [p.recipeId, p.portionScale, p.substitutions]))])
   const lastWeighIn = useLiveQuery(async () => (await db.weight_measurements.orderBy('date').last())?.date ?? null)
 
   const choice = useDayChoices([date])?.[0]
@@ -49,7 +75,8 @@ export default function TodayScreen() {
   const plannedTotals = SLOTS.reduce((acc, slot) => {
     const m = mealFor(slot)
     const n = m.recipe && nutrition?.get(m.recipe.id)
-    return n ? addNutrients(acc, n.perServing, m.scale) : acc
+    const per = n ? mealPer(m) : null
+    return per ? addNutrients(acc, per) : acc
   }, emptyNutrients())
   const anyLogged = !!log && log.logged.size + log.quick.length > 0
   const shown = view ?? (anyLogged ? 'eaten' : 'planned')
@@ -108,17 +135,12 @@ export default function TodayScreen() {
               </div>
             }
           >
-            <div className="grid grid-cols-4 gap-1">
-              <Ring value={totals.energyKcal} target={day.energyKcal} label="Energy" unit="kcal" color="#e07f2a" />
-              <Ring value={totals.proteinG} target={day.proteinG.preferred} label="Protein" unit="g" color="#2e7445" />
-              <Ring value={totals.carbsG} target={day.carbsG} label="Carbs" unit="g" color="#ca8a04" />
-              <Ring value={totals.fatG} target={day.fatG} label="Fat" unit="g" color="#7c3aed" />
-            </div>
-            <div className="mt-4 space-y-2 text-sm">
-              {day.carbsMinG !== null && <Limit label="Carbs (daily minimum)" value={totals.carbsG} limit={day.carbsMinG} />}
-              <Limit label="Saturated fat" value={totals.satFatG} limit={day.satFatMaxG} max />
-              <Limit label="Fibre" value={totals.fibreG} limit={day.fibreMinG} />
-              <Limit label="Added sugar" value={totals.addedSugarG} limit={day.addedSugarMaxG} max />
+            <NutrientGauges totals={totals} day={day} expected={shown === 'eaten' && date === now ? expectedByNow(SLOTS.map((s) => day.slots[s].time), nowTime()) : 1} />
+            <details className="mt-3 rounded-xl border border-stone-200 px-3 py-1">
+              <summary className="min-h-10 cursor-pointer content-center text-sm font-medium text-stone-700">Nutrition overview: fibre, sugar, saturated fat, cost</summary>
+              <DaySnapshot totals={totals} day={day} costCents={shown === 'planned' ? dayCost?.cents ?? null : undefined} unpriced={dayCost?.unpriced} caption={`${shown === 'eaten' ? 'Eaten' : 'Planned'} nutrition for ${fmt.date(date)}`} />
+            </details>
+            <div className="mt-2 text-sm">
               <p className="text-xs text-stone-500">
                 {shown === 'eaten'
                   ? `${Math.max(0, Math.round(day.proteinG.preferred - totals.proteinG))} g protein to go · ${log?.complete ? 'every meal logged' : 'meals not yet logged count as nothing'}`
@@ -127,11 +149,14 @@ export default function TodayScreen() {
             </div>
           </Card>
 
+          {date === now && <AskChef />}
+          {date === now && <SuggestCard />}
+
           {SLOTS.map((slot) => {
             const st = day.slots[slot]
             const m = mealFor(slot)
             const n = m.recipe ? nutrition.get(m.recipe.id) : undefined
-            const per = n ? scaleNutrients(n.perServing, m.scale) : null
+            const per = n ? mealPer(m) : null
             return (
               <Card key={slot} className="p-0 overflow-hidden">
                 <div className="flex items-center justify-between px-4 pt-3">
@@ -161,6 +186,9 @@ export default function TodayScreen() {
                   </Link>
                 ) : (
                   <p className="px-4 py-4 text-sm text-stone-500">Nothing chosen yet.</p>
+                )}
+                {m.recipe && !(m.planned && log?.logged.has(m.planned.id)) && (
+                  <div className="px-4 pb-1"><MealPantryChip recipeId={m.recipe.id} recipeName={m.recipe.name} portionScale={m.scale} date={date} planned={m.planned} /></div>
                 )}
                 <EatBar date={date} slot={slot} planned={m.planned} logged={m.planned ? log?.logged.get(m.planned.id) : undefined} recipeName={m.recipe?.name} />
                 <div className="space-y-1.5 border-t border-stone-100 bg-stone-50/60 px-4 py-3">
@@ -203,26 +231,6 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
     <div className="flex items-center gap-2">
       <span className="w-14 text-xs text-stone-500">{label}</span>
       <div className="flex-1">{children}</div>
-    </div>
-  )
-}
-
-function Limit({ label, value, limit, max }: { label: string; value: number; limit: number | null; max?: boolean }) {
-  if (limit === null) {
-    return (
-      <div className="flex items-center justify-between">
-        <span className="text-stone-600">{label}</span>
-        <span className="tabular text-stone-700">{fmt.g(value)} <span className="text-stone-400">no limit set</span></span>
-      </div>
-    )
-  }
-  const ok = max ? value <= limit : value >= limit
-  return (
-    <div className="flex items-center justify-between">
-      <span className="text-stone-600">{label}</span>
-      <span className={`tabular ${ok ? 'text-stone-700' : max ? 'text-red-600' : 'text-ember-600'}`}>
-        {fmt.g(value)} <span className="text-stone-400">{max ? 'max' : 'min'} {limit} g</span>
-      </span>
     </div>
   )
 }

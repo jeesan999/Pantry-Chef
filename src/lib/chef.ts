@@ -18,6 +18,7 @@ import { budgetStatuses } from './expenses'
 import { exportBackup } from './backup'
 import { loadProgress } from './progress'
 import { FLAG_LABEL, allRatings, rate, restoreRating } from './ratings'
+import { loadMealContext, mealNutrition } from './meals'
 import { acceptDraft, buildDraft } from './planner'
 import { eatMeal, eatQuick, eatenFor, ensureBreakfast, loadDay, previewMeal, previewQuick, undoEaten, type QuickChoice } from './eating'
 import { fmtRate, hasRate } from '../engines/progress/engine'
@@ -25,6 +26,11 @@ import { searchItems } from './itemSearch'
 import { addNutrients, emptyNutrients } from './nutrition'
 import { loadPantrySuggestions, loadRecipeNutrition, rankForSlot } from './rank'
 import { clearDayChoice, dayChoice, setDayType } from './schedule'
+import { nextMealSlot, suggestForSlot, type Suggestion } from './suggestions'
+import { substitutesFor } from '../data/substitutes'
+import { displayName } from './itemSearch'
+import { loadLots } from './meals'
+import type { PlanSlot } from '../engines/planner/engine'
 import { addExtra, currentList, generateList, nextWeekRange, removeItem, thisWeekRange, type ExtraChoice } from './shopping'
 
 export interface Link { to: string; label: string }
@@ -87,6 +93,9 @@ export async function act(deps: ChefDeps, intent: Intent): Promise<Reply> {
     case 'undoEaten': return undoLog(deps, intent.date, intent.slot, intent.item)
     case 'eatenToday': return eatenOn(deps, intent.date)
     case 'backup': return backup(deps)
+    case 'find': return find(deps, intent)
+    case 'substitute': return substitute(deps, intent.item)
+    case 'proteinBoost': return proteinBoost(deps, intent.date)
   }
 }
 
@@ -296,9 +305,10 @@ async function nutritionLeft(deps: ChefDeps, date: string): Promise<Reply> {
   let sum = emptyNutrients()
   const fb = nutrition.get(FIXED_BREAKFAST_ID)
   if (fb) sum = addNutrients(sum, fb.perServing)
+  const mctx = await loadMealContext(deps.repo)
   for (const p of planned) {
-    const n = nutrition.get(p.recipeId)
-    if (n) sum = addNutrients(sum, n.perServing, p.portionScale)
+    if (p.slot === 'breakfast') continue // counted above as the fixed breakfast
+    if (nutrition.get(p.recipeId)) sum = addNutrients(sum, mealNutrition(mctx, p).n) // swaps included
   }
   const d = t.day
   const log = await loadDay(deps.repo, date)
@@ -901,3 +911,125 @@ async function backup(deps: ChefDeps): Promise<Reply> {
     },
   )
 }
+
+// ---------- finding meals ----------
+
+const fmtMoney = (c: number) => `$${(c / 100).toFixed(2)}`
+
+/** One suggestion as a tappable option: plan it for that meal (portioned by the planner). */
+function suggestionOption(deps: ChefDeps, date: string, slot: PlanSlot, s: Suggestion): Option {
+  const a = s.availability
+  const pantry = a.allAvailable ? 'all in your pantry' : `${a.missing + a.partial} to buy`
+  return {
+    label: s.recipe.name,
+    detail: [`${Math.round(s.nutrition.proteinG)} g protein`, `${Math.round(s.nutrition.energyKcal)} kcal`, `${s.totalMin} min`, s.costCents !== null ? fmtMoney(s.costCents) : '', pantry].filter(Boolean).join(' · '),
+    run: async () => ({ kind: 'done', ...(await placeMeal(deps, date, slot, s.recipe, s.portionScale)) }),
+  }
+}
+
+/** Which meal a question is about: the one named, else lunch after training, else the next meal. */
+async function slotFor(deps: ChefDeps, date: string, slot: SlotName | undefined, postWorkout?: boolean): Promise<{ date: string; slot: PlanSlot } | 'breakfast'> {
+  if (slot === 'breakfast') return 'breakfast'
+  if (slot) return { date, slot }
+  if (postWorkout) {
+    const t = await targetsOn(deps, date)
+    const start = t?.day.workout?.start
+    if (start && t) {
+      // the first meal after the session
+      const after = (['smoko', 'lunch', 'dinner'] as PlanSlot[]).find((s) => t.day.slots[s].time > start)
+      if (after) return { date, slot: after }
+    }
+    return { date, slot: 'lunch' }
+  }
+  if (date !== deps.today) return { date, slot: 'dinner' }
+  return nextMealSlot(deps.repo, deps.today, deps.now)
+}
+
+async function find(deps: ChefDeps, i: Extract<Intent, { type: 'find' }>): Promise<Reply> {
+  const at = await slotFor(deps, i.date, i.slot, i.postWorkout)
+  if (at === 'breakfast') return breakfastFixed()
+  if (!(await targetsOn(deps, at.date))) return noTargets()
+  // a named meal: just that one; otherwise the next meal, then the rest of that day
+  const order: PlanSlot[] = ['smoko', 'lunch', 'dinner']
+  const slots = i.slot || i.postWorkout ? [at.slot] : order.slice(order.indexOf(at.slot))
+  const ok = i.foods.length ? await recipesWith(deps.repo, i.foods) : null
+  const why: string[] = []
+  if (i.foods.length) why.push(`with ${i.foods.join(', ')}`)
+  if (i.maxCents !== undefined) why.push(`under ${fmtMoney(i.maxCents)}`)
+  if (i.maxMin !== undefined) why.push(`ready in ${i.maxMin} min or less`)
+  if (i.highProtein) why.push('most protein first')
+  if (i.postWorkout) why.push('after training: protein and carbs for recovery')
+  let first: { slot: PlanSlot; remaining: { energyKcal: number; proteinG: number } } | null = null
+  let picked: Array<{ slot: PlanSlot; s: Suggestion }> = []
+  for (const slot of slots) {
+    const res = await suggestForSlot(deps.repo, { date: at.date, slot, today: deps.today, now: deps.now, limit: 400 })
+    let list = res.suggestions
+    if (ok) list = list.filter((s) => ok.has(s.recipe.id))
+    if (i.maxCents !== undefined) list = list.filter((s) => s.costCents !== null && s.costCents <= i.maxCents!)
+    if (i.maxMin !== undefined) list = list.filter((s) => s.totalMin <= i.maxMin!)
+    if (i.highProtein || i.postWorkout) list = [...list].sort((a, b) => b.nutrition.proteinG - a.nutrition.proteinG)
+    // pantry first when asked (or when you named what you have); the planner's order otherwise
+    if (i.fromPantry) list = [...list].sort((a, b) => Number(b.availability.allAvailable) - Number(a.availability.allAvailable) || b.availability.coverage - a.availability.coverage)
+    if (list.length) {
+      first = { slot, remaining: res.remaining }
+      picked = list.slice(0, 4).map((s) => ({ slot, s }))
+      break
+    }
+  }
+  if (!first) {
+    const hint = i.maxCents !== undefined ? ' Prices come from your scanned receipts, so recipes without prices can’t be checked yet.' : ''
+    return answer(`I couldn’t find a recipe for ${mealLabel(at.date, at.slot, deps.today)}${why.length ? ` ${why.join(', ')}` : ''}.${hint}`, { link: { to: '/recipes', label: 'Browse recipes' } })
+  }
+  const r = first.remaining
+  return answer(`For ${mealLabel(at.date, first.slot, deps.today)}${why.length ? ` (${why.join(', ')})` : ''}:`, {
+    lines: [
+      `Still needed before this meal: ${Math.max(0, Math.round(r.energyKcal)).toLocaleString('en-AU')} kcal · ${Math.max(0, Math.round(r.proteinG))} g protein`,
+      ...(i.leftovers ? ['Leftovers keep about 3 days in the fridge (cooked rice 1 day): use them first.'] : []),
+    ],
+    options: picked.map(({ slot, s }) => {
+      const o = suggestionOption(deps, at.date, slot, s)
+      return s.current ? { ...o, detail: `already planned · ${o.detail}` } : o
+    }),
+  })
+}
+
+async function proteinBoost(deps: ChefDeps, date: string): Promise<Reply> {
+  const t = await targetsOn(deps, date)
+  if (!t) return noTargets()
+  const log = await loadDay(deps.repo, date)
+  const eaten = log.totals.proteinG
+  const gap = Math.round(t.day.proteinG.preferred - eaten)
+  if (gap <= 0) return answer(`You’ve already reached your protein target (${Math.round(eaten)} of ${t.day.proteinG.preferred} g).`)
+  const at = await slotFor(deps, date, undefined)
+  if (at === 'breakfast') return breakfastFixed()
+  const res = await suggestForSlot(deps.repo, { date: at.date, slot: at.slot, today: deps.today, now: deps.now, limit: 400 })
+  const top = [...res.suggestions].sort((a, b) => b.nutrition.proteinG - a.nutrition.proteinG || Number(b.availability.allAvailable) - Number(a.availability.allAvailable)).slice(0, 3)
+  return answer(`${gap} g protein to go ${date === deps.today ? 'today' : dayLabel(date, deps.today)} (${Math.round(eaten)} of ${t.day.proteinG.preferred} g eaten). The highest-protein options for ${mealLabel(at.date, at.slot, deps.today)}:`, {
+    lines: ['Quick top-ups: Greek yoghurt (about 10 g per 100 g), 2 eggs (12 g), a tin of tuna (25 g), skim milk (9 g per glass).'],
+    options: top.map((s) => suggestionOption(deps, at.date, at.slot, s)),
+    link: { to: '/', label: 'See Today' },
+  })
+}
+
+async function substitute(deps: ChefDeps, item: string): Promise<Reply> {
+  const foods = await deps.repo.db.foods.toArray()
+  const fuse = new Fuse(foods.map((f) => ({ f, name: displayName(f.name) })), { keys: ['name'], threshold: 0.4, ignoreLocation: true })
+  const hits = fuse.search(item).map((h) => h.item.f).filter((f) => substitutesFor(f.id).length > 0)
+  const food = hits[0]
+  if (!food) return answer(`I don’t have a substitute list for ${item} yet.`, { lines: ['Ingredients with swaps include meats and fish, grains, dairy, beans, greens and sauces.'] })
+  const { lots } = await loadLots(deps.repo)
+  const have = new Set(lots.filter((l) => l.foodId && l.remaining > 1e-9 && (!l.expiryDate || l.expiryKind === 'best_before' || l.expiryDate >= deps.today)).map((l) => l.foodId!))
+  const byId = new Map(foods.map((f) => [f.id, f]))
+  const subs = substitutesFor(food.id).filter((s) => byId.has(s.foodId))
+  const inStock = subs.filter((s) => have.has(s.foodId))
+  const label = (id: string) => displayName(byId.get(id)!.name)
+  const name = displayName(food.name).toLowerCase()
+  return answer(inStock.length ? `Instead of ${name}, you have: ${inStock.map((s) => label(s.foodId).toLowerCase()).join(', ')}.` : `Nothing in your pantry replaces ${name} yet. These would work:`, {
+    lines: [
+      `Swaps that work weight for weight: ${subs.slice(0, 8).map((s) => `${label(s.foodId)}${have.has(s.foodId) ? ' (in your pantry)' : ''}`).join(', ')}.`,
+      'In a planned meal, open its pantry check and tap Swap to use one; the shopping list and nutrition follow.',
+    ],
+    link: { to: '/', label: 'See Today' },
+  })
+}
+

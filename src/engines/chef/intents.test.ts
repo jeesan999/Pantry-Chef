@@ -200,3 +200,32 @@ describe('interpret', () => {
     else expect(r.intent.type).toBe('dayType')
   })
 })
+
+describe('interpret: finding meals, substitutes, protein', () => {
+  const T = '2026-11-26'
+  it.each([
+    ['High-protein lunch ideas', { type: 'find', slot: 'lunch', highProtein: true, foods: [] }],
+    ['I have chicken, rice and broccoli', { type: 'find', foods: ['chicken', 'rice', 'broccoli'], fromPantry: true }],
+    ['I have eggs and spinach, what can I make?', { type: 'find', foods: ['eggs', 'spinach'] }],
+    ['Dinner under $5', { type: 'find', slot: 'dinner', maxCents: 500 }],
+    ['cheap lunch tomorrow', { type: 'find', date: '2026-11-27', slot: 'lunch', maxCents: 500 }],
+    ['high protein dinner under $6 in 20 minutes', { type: 'find', slot: 'dinner', maxCents: 600, maxMin: 20, highProtein: true }],
+    ['Something quick for dinner', { type: 'find', slot: 'dinner', maxMin: 20 }],
+    ['Post-workout meal', { type: 'find', postWorkout: true }],
+    ['what should i eat after the gym', { type: 'find', postWorkout: true }],
+    ['What can I do with leftover rice?', { type: 'find', foods: ['rice'], leftovers: true }],
+    ['What can I make with what’s in my pantry?', { type: 'cook', foods: [] }],
+    ['What can I use instead of sour cream?', { type: 'substitute', item: 'sour cream' }],
+    ['substitute for greek yoghurt', { type: 'substitute', item: 'greek yoghurt' }],
+    ['I ran out of eggs, what can I use instead?', { type: 'substitute', item: 'eggs' }],
+    ['How do I reach my protein target today?', { type: 'proteinBoost', date: T }],
+    ['i need more protein today', { type: 'proteinBoost' }],
+    // unchanged
+    ['Something with chicken for lunch tomorrow', { type: 'swap', slot: 'lunch', withFood: 'chicken' }],
+    ['How much protein is left today?', { type: 'nutritionLeft' }],
+  ])('%s', (text, expected) => {
+    const r = interpret(text, T)
+    expect(r.kind).toBe('intent')
+    expect((r as { intent: object }).intent).toMatchObject(expected)
+  })
+})

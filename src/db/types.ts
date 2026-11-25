@@ -61,6 +61,8 @@ export interface Settings {
   weeklyBudgetCents?: Cents
   monthlyBudgetCents?: Cents
   backupReminderDays: number
+  appearance?: { theme: string; mode: 'light' | 'dark' | 'system' } // colour theme and light/night mode
+  recipeLibrary?: number // which starter-recipe additions this install has received
   lastBackupAt?: string
   updatedAt: string
 }
@@ -275,6 +277,7 @@ export interface ShoppingList {
   from?: string // first and last day of meals the list covers
   to?: string
   coveredLabels?: string[] // needed by the meals but already in the pantry
+  removedKeys?: string[] // `${productId}|${unit}` plan items you removed: not re-added when the list updates
   createdAt: string
   updatedAt?: string
 }
@@ -293,6 +296,7 @@ export interface ShoppingListItem {
   neededQty?: number // plan lines: what the meals call for
   haveQty?: number // plan lines: pantry stock counted against it
   recipes?: string[]
+  quantityEdited?: boolean // you changed the amount: updating the list keeps it
 }
 
 // ---------- Recipes ----------
@@ -308,6 +312,8 @@ export interface Recipe {
   servings: number
   slotTags: SlotTag[]
   fixedSlot?: SlotName
+  protein?: string // main protein: beef, chicken, lamb, pork, turkey, egg, fish, seafood, vegetarian, kangaroo
+  technique?: string // stir-fry, grill, roast, bake, braise, simmer, pan-fry, no-cook, steam, one-pot
   photo?: Blob
   starter: boolean
   createdAt: string
@@ -361,6 +367,7 @@ export interface PlannedMeal {
   time: string
   recipeId: Id
   portionScale: number
+  substitutions?: Record<Id, Id> // recipe ingredient id -> food id used instead (weight for weight)
 }
 
 /** Something eaten: a planned meal (fraction 0 = skipped) or a quick food. Frozen when logged. */

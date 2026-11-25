@@ -12,6 +12,7 @@ import { ACTIVITY_LEVELS, ageOn } from '../engines/nutrition/engine'
 import { fixedBreakfastNutrition } from '../engines/nutrition/service'
 import { SLOT_LABEL } from '../lib/day'
 import { BackupCard } from './settings/BackupCard'
+import { AppearanceCard } from './settings/AppearanceCard'
 import { useProfile, useSettings } from '../lib/hooks'
 
 const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -40,6 +41,7 @@ export default function SettingsScreen() {
       <TrainingCard />
       <NutritionCard settings={settings} />
       <BreakfastCard settings={settings} />
+      <AppearanceCard />
       <BackupCard />
       <DataCard />
     </Page>
@@ -63,7 +65,7 @@ function ProfileCard({ profile }: { profile: Profile }) {
           <Field label="Starting weight (kg)" hint="Used until your first weigh-in"><Input inputMode="decimal" value={p.startingWeightKg} onChange={(e) => setP({ ...p, startingWeightKg: Number(e.target.value) })} /></Field>
         </div>
         <p className="text-sm font-medium text-stone-700">Meal times</p>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {SLOTS.map((s) => (
             <Field key={s} label={SLOT_LABEL[s]}><Input type="time" value={p.mealTimes[s]} onChange={(e) => setP({ ...p, mealTimes: { ...p.mealTimes, [s]: e.target.value } })} /></Field>
           ))}

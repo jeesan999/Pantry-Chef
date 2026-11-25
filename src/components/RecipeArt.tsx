@@ -28,12 +28,13 @@ export function RecipeArt({ recipe, className }: { recipe: Pick<Recipe, 'name' |
   const [bg, fg] = PALETTES[recipe.cuisine] ?? ['#ecebe8', '#44403c']
   const initials = recipe.name.split(/[\s,:]+/).filter((w) => /^[A-Za-z]/.test(w)).slice(0, 2).map((w) => w[0].toUpperCase()).join('')
   return (
-    <div className={cx('relative flex items-center justify-center overflow-hidden', className)} style={{ background: bg }} aria-hidden>
+    // night mode: the pastel blends towards the card colour and the ink lightens (see --art-mix in src/theme)
+    <div className={cx('relative flex items-center justify-center overflow-hidden', className)} style={{ background: `color-mix(in oklab, ${bg} var(--art-mix), var(--color-white))` }} aria-hidden>
       <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full opacity-25">
-        <circle cx="78" cy="22" r="30" fill={fg} opacity="0.35" />
-        <circle cx="18" cy="88" r="26" fill={fg} opacity="0.25" />
+        <circle cx="78" cy="22" r="30" style={{ fill: fg }} opacity="0.35" />
+        <circle cx="18" cy="88" r="26" style={{ fill: fg }} opacity="0.25" />
       </svg>
-      <span className="relative text-2xl font-semibold tracking-wide" style={{ color: fg }}>{initials}</span>
+      <span className="relative text-2xl font-semibold tracking-wide" style={{ color: `color-mix(in oklab, ${fg} var(--art-ink), white)` }}>{initials}</span>
     </div>
   )
 }

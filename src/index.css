@@ -1,18 +1,73 @@
 @import "tailwindcss";
 
+/* Defaults = the Fresh theme in light mode. Themes and night mode override these variables at
+   runtime (src/theme), so every colour class in the app follows the chosen appearance. */
 @theme {
   --color-leaf-50: #f0f7f1;
   --color-leaf-100: #dcefe0;
   --color-leaf-200: #b9dec2;
+  --color-leaf-300: #8cc79c;
   --color-leaf-500: #3f8f57;
   --color-leaf-600: #2e7445;
   --color-leaf-700: #245c38;
+  --color-leaf-800: #1b4429;
   --color-leaf-900: #14321f;
   --color-ember-400: #f0a35a;
-  --color-ember-500: #e07f2a;
-  --color-ember-600: #b8611a;
+  --color-ember-500: #c96a1c;
+  --color-ember-600: #b05a14;
   --color-ink: #1c1917;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --color-on-accent: #ffffff;
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.04);
+  --shadow-raised: 0 4px 16px rgb(0 0 0 / 0.08);
+  --animate-page-in: page-in 0.22s ease-out;
+  --animate-pop-in: pop-in 0.18s ease-out;
+
+  @keyframes page-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes pop-in {
+    from { opacity: 0; transform: scale(0.97); }
+    to { opacity: 1; transform: none; }
+  }
+}
+
+:root {
+  --chart-series: var(--color-leaf-600);
+  --chart-grid: var(--color-stone-200);
+  --chart-axis: var(--color-stone-500);
+  --chart-dots: var(--color-stone-400);
+  --chart-cursor: var(--color-stone-100);
+  --nut-energy: var(--color-ember-500);
+  --nut-protein: var(--color-leaf-600);
+  --nut-carbs: #b7860b;
+  --nut-fat: #7c3aed;
+  --art-mix: 100%;
+  --art-ink: 100%;
+}
+
+/* night mode: deeper shadows read as separation on dark surfaces */
+:root[data-mode='dark'] {
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-raised: 0 6px 20px rgb(0 0 0 / 0.5);
+}
+
+/* colour changes between themes fade instead of snapping */
+body,
+section,
+nav,
+header {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 html,
@@ -23,6 +78,7 @@ body,
 
 body {
   @apply bg-stone-50 text-ink antialiased;
+  font-feature-settings: 'cv11', 'ss01'; /* Inter: straight-sided digits, single-storey a */
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
 }

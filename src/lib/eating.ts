@@ -15,8 +15,9 @@ import { approvedTargets } from '../engines/nutrition/service'
 import { formatQty } from '../engines/shopping/engine'
 import { searchItems } from './itemSearch'
 import { assignMeal, targetsForDate } from './day'
+import { loadLots, loadMealContext, mealNeeds, mealNutrition } from './meals'
 import { loadCostContext } from './expenses'
-import { emptyNutrients, ingredientGrams, recipeNutrition, scaleNutrients } from './nutrition'
+import { emptyNutrients, scaleNutrients } from './nutrition'
 import { dayChoice } from './schedule'
 
 export const MAX_DAYS_BACK = 7
@@ -64,33 +65,10 @@ export interface EatPreview {
 }
 
 async function prepare(repo: Repo, pm: PlannedMeal, fraction: number): Promise<EatPreview> {
-  const [recipe, ings, foods, yields, lots, ctx, products] = await Promise.all([
-    repo.get('recipes', pm.recipeId),
-    repo.db.recipe_ingredients.where('recipeId').equals(pm.recipeId).toArray(),
-    repo.db.foods.toArray(),
-    repo.db.cooking_yields.toArray(),
-    lotInfos(repo),
-    loadCostContext(repo),
-    repo.db.products.toArray(),
-  ])
+  const [recipe, mctx, { lots, productFood }, ctx] = await Promise.all([repo.get('recipes', pm.recipeId), loadMealContext(repo), loadLots(repo), loadCostContext(repo)])
   if (!recipe) throw new IntegrityError('That recipe no longer exists.')
-  const fm = new Map<string, Food>(foods.map((f) => [f.id, f]))
-  const pm2 = new Map<string, Product>(products.map((p) => [p.id, p]))
-  const k = pm.portionScale / Math.max(recipe.servings, 1)
-  const needs: Need[] = ings
-    .filter((i) => !i.optional)
-    .sort((a, b) => a.sort - b.sort)
-    .map((i) => {
-      const foodId = i.foodId ?? (i.productId ? pm2.get(i.productId)?.foodId : undefined)
-      const food = foodId ? fm.get(foodId) : undefined
-      let grams: number | null = null
-      try {
-        grams = food ? ingredientGrams(i, food, yields) * k : null
-      } catch {
-        grams = null
-      }
-      return { label: i.label, foodId, productId: i.productId, grams, qty: i.quantity * k, unit: i.unit }
-    })
+  const fm = mctx.foods
+  const needs: Need[] = mealNeeds(mctx, pm, productFood) // swaps applied
   const plan = planEating(needs, lots, fraction, pm.date)
   const lotUnit = new Map(lots.map((l) => [l.id, l.unit]))
   // shortfall of the eaten share, priced from your latest prices where known
@@ -102,7 +80,7 @@ async function prepare(repo: Repo, pm: PlannedMeal, fraction: number): Promise<E
     const c = price ? costOf(l.missing.amount * fraction, l.missing.unit, price, n.foodId ? fm.get(n.foodId) : undefined) : null
     if (c) shortCents += c
   })
-  const nutrition = scaleNutrients(recipeNutrition(ings, fm, recipe.servings, yields).perServing, pm.portionScale * fraction)
+  const nutrition = scaleNutrients(mealNutrition(mctx, pm).n, fraction)
   return {
     plan,
     nutrition,

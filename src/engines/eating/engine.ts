@@ -20,7 +20,7 @@ export interface LotInfo {
 }
 
 /** One ingredient line at the portion cooked. grams is the raw weight when known. */
-export interface Need { label: string; foodId?: string; productId?: string; grams: number | null; qty: number; unit: QtyUnit }
+export interface Need { label: string; foodId?: string; productId?: string; grams: number | null; qty: number; unit: QtyUnit; ingredientId?: string }
 
 export interface Take { lotId: string; qty: number } // in the lot's unit
 export interface LineResult { label: string; consume: Take[]; discard: Take[]; coveredFrac: number; missing: { amount: number; unit: QtyUnit } | null }

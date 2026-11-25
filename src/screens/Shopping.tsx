@@ -1,10 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { Button, Card, Field, Input, Notice, Page, Sheet, cx, fmt } from '../components/ui'
 import { db, repo, today } from '../db/instance'
 import type { ShoppingListItem } from '../db/types'
-import { clearTicked, currentList, deleteList, generateList, nextWeekRange, thisWeekRange, type GenerateResult, type ListRange } from '../lib/shopping'
+import { clearTicked, currentList, deleteList, generateList, restoreRemoved, nextWeekRange, thisWeekRange, type GenerateResult, type ListRange } from '../lib/shopping'
 import { AddExtraSheet, ItemRow } from './shopping/parts'
 
 type RangeKind = 'this' | 'next' | 'custom'
@@ -22,6 +22,7 @@ export default function ShoppingScreen() {
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const fromPlan = (useLocation().state as { msg?: string } | null)?.msg
 
   // Default range: the current list's, if it matches a preset; else this week.
   const matches = (r: ListRange) => list && list.from === r.from && list.to === r.to
@@ -84,6 +85,7 @@ export default function ShoppingScreen() {
             </Notice>
           </div>
         )}
+        {!built && fromPlan && <p className="mt-2 text-sm text-leaf-700" role="status">{fromPlan}</p>}
         {built && built.plannedMeals > 0 && (
           <p className="mt-2 text-sm text-leaf-700" role="status">
             Built from {built.plannedMeals} planned meal{built.plannedMeals === 1 ? '' : 's'} and {built.meals - built.plannedMeals} breakfast{built.meals - built.plannedMeals === 1 ? '' : 's'}: {built.toBuy} to buy.
@@ -107,7 +109,7 @@ export default function ShoppingScreen() {
           {sortedGroups.map(([cat, group]) => (
             <Card key={cat} title={cat}>
               <ul className="divide-y divide-stone-100">
-                {[...group].sort((a, b) => Number(a.ticked) - Number(b.ticked) || (a.label ?? '').localeCompare(b.label ?? '')).map((i) => <ItemRow key={i.id} item={i} />)}
+                {[...group].sort((a, b) => Number(a.ticked) - Number(b.ticked) || (a.label ?? '').localeCompare(b.label ?? '')).map((i) => <ItemRow key={i.id} item={i} product={products.get(i.productId)} />)}
               </ul>
             </Card>
           ))}
@@ -119,6 +121,13 @@ export default function ShoppingScreen() {
                 <ul className="mt-2 list-disc pl-5 text-sm text-stone-600">{list.coveredLabels.map((l) => <li key={l}>{l}</li>)}</ul>
               </details>
             </Card>
+          )}
+
+          {!!list.removedKeys?.length && (
+            <p className="px-1 text-sm text-stone-600">
+              {list.removedKeys.length} plan item{list.removedKeys.length === 1 ? '' : 's'} removed by you.{' '}
+              <button type="button" className="font-medium text-leaf-700 underline" onClick={async () => { await restoreRemoved(repo, list.id); if (list.from && list.to) setBuilt(await generateList(repo, { from: list.from, to: list.to }, list.id)) }}>Put back</button>
+            </p>
           )}
 
           <div className="flex gap-2">

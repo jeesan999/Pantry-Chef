@@ -46,7 +46,7 @@ export default function PantryScreen() {
     <Page title="Pantry" subtitle={stock ? `${stock.length} items in stock · ${fmt.money(value)} at cost` : ' '} action={<Button onClick={() => setAdding(true)}>Add</Button>}>
       {stock?.length === 0 && (
         <Card>
-          <p className="text-stone-700">Your pantry is empty. Add what you have on hand; receipt scanning (Phase 3) will add purchases automatically.</p>
+          <p className="text-stone-700">Your pantry is empty. Add what you have on hand, or <Link to="/scan" className="font-medium text-leaf-700 underline">scan a receipt</Link> to add your shopping automatically.</p>
         </Card>
       )}
       {LOCATIONS.map((loc) => {

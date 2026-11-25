@@ -1,5 +1,6 @@
 import { INTERIM_FOODS, INTERIM_FOOD_ID, INTERIM_YIELDS } from '../data/interimFoods'
-import { STARTER_RECIPES, type StarterRecipe } from '../data/recipes'
+import type { StarterRecipe } from '../data/recipes'
+import { ALL_RECIPES, LIBRARY_RECIPES, RECIPE_LIBRARY_VERSION } from '../data/library'
 import { newId, nowIso, type Repo } from './repo'
 import type { Profile, Recipe, RecipeIngredient, Settings } from './types'
 
@@ -91,6 +92,8 @@ function starterToRecords(s: StarterRecipe): { recipe: Recipe; ingredients: Reci
     cookMin: s.cookMin,
     servings: s.servings,
     slotTags: s.slotTags,
+    protein: s.protein,
+    technique: s.technique,
     starter: true,
     createdAt: nowIso(),
     updatedAt: nowIso(),
@@ -160,13 +163,34 @@ export async function seedIfEmpty(repo: Repo, today: string): Promise<boolean> {
         active: true,
       })
     }
-    for (const s of STARTER_RECIPES) {
+    for (const s of ALL_RECIPES) {
       const { recipe, ingredients } = starterToRecords(s)
       await repo.insert('recipes', recipe)
       for (const ing of ingredients) await repo.insert('recipe_ingredients', ing)
     }
   })
   return true
+}
+
+/**
+ * Give an existing install the recipes added in later versions, once. Only recipes new in that version
+ * are added (a starter recipe you deleted stays deleted) and nothing you have is changed.
+ */
+export async function ensureStarterRecipes(repo: Repo): Promise<number> {
+  const settings = await repo.get('settings', SETTINGS_ID)
+  if (!settings || (settings.recipeLibrary ?? 1) >= RECIPE_LIBRARY_VERSION) return 0
+  let added = 0
+  await repo.tx(async () => {
+    for (const s of LIBRARY_RECIPES) {
+      const { recipe, ingredients } = starterToRecords(s)
+      if (await repo.db.recipes.get(recipe.id)) continue
+      await repo.insert('recipes', recipe)
+      for (const ing of ingredients) await repo.insert('recipe_ingredients', ing)
+      added++
+    }
+    await repo.update('settings', SETTINGS_ID, { recipeLibrary: RECIPE_LIBRARY_VERSION })
+  })
+  return added
 }
 
 /** Rewrite the fixed breakfast's ingredients after its quantities change in settings. */

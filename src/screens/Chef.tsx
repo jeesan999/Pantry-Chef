@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Page } from '../components/ui'
 import { pantry, repo, today } from '../db/instance'
 import { newId } from '../db/repo'
@@ -7,7 +8,7 @@ import { on } from '../lib/events'
 import { Chip, Thread, type Handlers, type Msg } from './chef/Thread'
 
 const STORE = 'chef-thread'
-const STARTERS = ['Swap tonight’s dinner', 'Make tomorrow a rest day', 'Use up what expires soon', 'What can I cook?', 'Add milk to the shopping list', 'How much budget is left?']
+const STARTERS = ['Swap tonight’s dinner', 'Make tomorrow a rest day', 'Use up what expires soon', 'What can I cook?', 'High-protein lunch ideas', 'How do I reach my protein target today?', 'Dinner under $5', 'Add milk to the shopping list', 'How much budget is left?']
 
 function load(): Msg[] {
   try {
@@ -87,6 +88,20 @@ export default function ChefScreen() {
     void run(async () => fromReply(await ask({ repo, pantry, today: today(), now: nowHHMM() }, t)))
   }
 
+  // a question sent from another screen (Today's Ask Chef): ask it once, then forget it
+  const location = useLocation()
+  const navigate = useNavigate()
+  const incoming = (location.state as { ask?: string } | null)?.ask
+  useEffect(() => {
+    if (!incoming) return
+    const id = setTimeout(() => {
+      navigate('.', { replace: true, state: null })
+      say(incoming)
+    })
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming])
+
   const h: Handlers = {
     busy,
     live: (id) => LIVE.has(id),
@@ -143,8 +158,7 @@ export default function ChefScreen() {
       <div ref={end} className="h-20" aria-hidden />
 
       <form
-        className="fixed inset-x-0 z-20 border-t border-stone-200 bg-stone-50/95 backdrop-blur"
-        style={{ bottom: 'calc(4rem + env(safe-area-inset-bottom))' }}
+        className="fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom))] z-20 border-t border-stone-200 bg-stone-50/95 backdrop-blur lg:bottom-0 lg:left-60"
         onSubmit={(e) => {
           e.preventDefault()
           say(text)
@@ -161,7 +175,7 @@ export default function ChefScreen() {
             autoComplete="off"
             className="block min-h-11 w-full rounded-xl border border-stone-300 bg-white px-3 text-ink focus:border-leaf-500 focus:outline-none focus:ring-2 focus:ring-leaf-200"
           />
-          <button type="submit" disabled={busy || !text.trim()} className="min-h-11 shrink-0 rounded-xl bg-leaf-700 px-4 text-sm font-medium text-white transition hover:bg-leaf-600 disabled:opacity-40">
+          <button type="submit" disabled={busy || !text.trim()} className="min-h-11 shrink-0 rounded-xl bg-leaf-700 px-4 text-sm font-medium text-on-accent transition hover:bg-leaf-600 disabled:opacity-40">
             Send
           </button>
         </div>

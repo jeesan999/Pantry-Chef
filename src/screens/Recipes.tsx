@@ -1,10 +1,11 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import Fuse from 'fuse.js'
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { RecipeArt } from '../components/RecipeArt'
 import { Badge, Button, Input, Page, Select, cx } from '../components/ui'
-import { db, repo } from '../db/instance'
+import { db, repo, today } from '../db/instance'
+import { cookableNow } from '../lib/suggestions'
 import { allRatings } from '../lib/ratings'
 import type { SlotTag } from '../db/types'
 import { useAllRecipeNutrition, usePantrySuggestions } from '../lib/hooks'
@@ -25,7 +26,10 @@ export default function RecipesScreen() {
   const [q, setQ] = useState('')
   const [cuisine, setCuisine] = useState('')
   const [tag, setTag] = useState<SlotTag | ''>('')
+  const [params, setParams] = useSearchParams()
   const [fromPantry, setFromPantry] = useState(false)
+  const cookableOnly = params.get('cookable') === '1'
+  const cookable = useLiveQuery(() => cookableNow(repo, today()))
   const pantry = usePantrySuggestions()
   const ratings = useLiveQuery(() => allRatings(repo))
   const cover = new Map((pantry ?? []).map((p, i) => [p.recipe.id, { ...p, rank: i }]))
@@ -36,6 +40,7 @@ export default function RecipesScreen() {
     .filter((r) => !cuisine || r.cuisine === cuisine)
     .filter((r) => !tag || r.slotTags.includes(tag))
     .filter((r) => !fromPantry || cover.has(r.id))
+    .filter((r) => !cookableOnly || (!r.fixedSlot && !!cookable?.get(r.id)?.allAvailable))
     .sort((a, b) => (fromPantry ? cover.get(a.id)!.rank - cover.get(b.id)!.rank : 0))
 
   return (
@@ -56,6 +61,10 @@ export default function RecipesScreen() {
           <input type="checkbox" className="sr-only" checked={fromPantry} onChange={(e) => setFromPantry(e.target.checked)} />
           From my pantry{pantry ? ` (${pantry.length})` : ''}
         </label>
+        <label className={cx('flex min-h-10 w-fit items-center gap-2 rounded-full border px-3 text-sm', cookableOnly ? 'border-leaf-500 bg-leaf-50 text-leaf-700' : 'border-stone-300 text-stone-600')}>
+          <input type="checkbox" className="sr-only" checked={cookableOnly} onChange={(e) => setParams(e.target.checked ? { cookable: '1' } : {})} />
+          Can make now{cookable ? ` (${[...cookable].filter(([id, a]) => a.allAvailable && recipes?.find((r) => r.id === id && !r.fixedSlot)).length})` : ''}
+        </label>
       </div>
       <ul className="grid grid-cols-2 gap-3">
         {list.map((r) => {
@@ -71,6 +80,7 @@ export default function RecipesScreen() {
                   </p>
                   <div className={cx('mt-1.5 flex flex-wrap gap-1')}>
                     {r.fixedSlot && <Badge>fixed</Badge>}
+                    {!r.fixedSlot && cookable?.get(r.id)?.allAvailable && <Badge tone="leaf">✓ all in pantry</Badge>}
                     {ratings?.get(r.id)?.flags.includes('favourite') && <Badge tone="red">♥ favourite</Badge>}
                     {ratings?.get(r.id)?.flags.includes('do_not_recommend') && <Badge>not suggested</Badge>}
                     {cover.get(r.id) && <Badge tone="ember">{Math.round(cover.get(r.id)!.coverage * 100)}% in stock</Badge>}

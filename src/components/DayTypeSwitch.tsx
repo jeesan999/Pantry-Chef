@@ -24,7 +24,7 @@ export function DayTypeSwitch({ choice, compact }: { choice: DayChoice; compact?
         onClick={() => pick(t)}
         className={cx(
           'min-h-9 rounded-full px-3 text-xs font-medium transition',
-          on ? (t === 'training' ? 'bg-ember-500 text-white' : 'bg-leaf-700 text-white') : 'text-stone-600',
+          on ? (t === 'training' ? 'bg-ember-500 text-on-accent' : 'bg-leaf-700 text-on-accent') : 'text-stone-600',
         )}
       >
         {label}

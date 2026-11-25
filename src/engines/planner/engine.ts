@@ -21,6 +21,7 @@ export interface PlannerRecipe {
   perServing: Nutrients
   ingredients: PlannerIngredient[] // non-optional lines with a food and a known weight
   costPerServing: number | null // cents, from your own prices; null when not fully priced
+  totalMin?: number // preparation + cooking time
 }
 export interface StockLot { foodId: string; grams: number; expiryDate?: string; expiryKind?: 'use_by' | 'best_before' }
 export interface Rating { stars?: number; flags: RatingFlag[] }
@@ -39,6 +40,8 @@ export interface PlanInput {
   foodNames?: Map<string, string>
   seed?: number
   exclude?: Record<string, string[]> // `${date}|${slot}` -> recipes you swapped away from there
+  extra?: Record<string, Nutrients> // per day: eaten beyond the plan (quick foods, part portions), added to day totals
+  alternatives?: number // how many alternatives to rank per meal (default 5)
 }
 
 export interface PlannedMealChoice extends Meal { reasons: string[]; alternatives: string[] }
@@ -73,6 +76,8 @@ const W = {
   tooRepetitive: 0.5,
   day: 1,
   jitter: 0.15,
+  allInPantry: 0.5, // everything in stock: no shopping needed
+  slowPerMin: 0.004, // beyond 30 minutes of preparation and cooking
 }
 const SOON_DAYS = 2
 const SLOT_ORDER: Record<PlanSlot, number> = { smoko: 0, lunch: 1, dinner: 2 }
@@ -164,6 +169,10 @@ function standalone(ctx: Ctx, r: PlannerRecipe, date: string, slot: PlanSlot, sc
     if (rating.flags.includes('too_repetitive')) score -= W.tooRepetitive
   }
   if (r.costPerServing !== null) score -= r.costPerServing * scale * W.centsPenalty
+  if (r.totalMin !== undefined) {
+    if (r.totalMin > 30) score -= (r.totalMin - 30) * W.slowPerMin
+    else if (r.totalMin <= 20) reasons.push(`ready in ${r.totalMin} min`)
+  }
   if (ctx.inp.seed) score += hash(`${ctx.inp.seed}|${date}|${slot}|${r.id}`) * W.jitter
   return { score, reasons }
 }
@@ -193,7 +202,7 @@ function evaluate(ctx: Ctx, meals: Meal[]): Evaluated {
   const dayTotals = new Map<string, Nutrients>()
   let prev: { date: string; cuisine: string } | null = null
   for (const date of inp.dates) {
-    let tot = emptyNutrients()
+    let tot = inp.extra?.[date] ? addNutrients(emptyNutrients(), inp.extra[date]) : emptyNutrients()
     if (inp.breakfast) {
       tot = addNutrients(tot, inp.breakfast.perDay)
       for (const i of inp.breakfast.ingredients) take(stock, i.foodId, i.grams, date, false)
@@ -222,7 +231,10 @@ function evaluate(ctx: Ctx, meals: Meal[]): Evaluated {
       const reasons = [...s.reasons]
       const cover = need > 0 ? covered / need : 0
       score += W.pantry * cover
-      if (cover >= 0.5) reasons.push(`${Math.round(cover * 100)}% from your pantry`)
+      if (need > 0 && cover >= 0.999) {
+        score += W.allInPantry
+        reasons.push('everything in your pantry')
+      } else if (cover >= 0.5) reasons.push(`${Math.round(cover * 100)}% from your pantry`)
       if (soonFoods.length) {
         score += Math.min(W.soonCap, W.soon * soonFoods.length)
         const names = soonFoods.map((f) => inp.foodNames?.get(f) ?? 'food').slice(0, 2)
@@ -333,7 +345,7 @@ export function planWeek(inp: PlanInput): PlanResult {
         })
         .filter((x) => x.total > -Infinity)
         .sort((a, b) => b.total - a.total || a.id.localeCompare(b.id))
-        .slice(0, 5)
+        .slice(0, inp.alternatives ?? 5)
         .map((x) => x.id)
       chosen.set(key(f), m)
       return { ...m, reasons: final.perMeal.get(key(f))?.reasons ?? [], alternatives: alts }

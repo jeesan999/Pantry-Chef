@@ -56,11 +56,11 @@ test('Today: fixed breakfast plus a chosen lunch updates the totals', async ({ p
   await expect.poll(async () => Number((await energy.getAttribute('aria-label'))!.match(/Energy (\d+)/)![1])).toBeGreaterThan(before + 300)
 })
 
-test('Recipes: 65 recipes, filter by cuisine, open and scale a recipe', async ({ page }) => {
+test('Recipes: 153 recipes, filter by cuisine, open and scale a recipe', async ({ page }) => {
   await page.goto('/#/recipes')
-  await expect(page.getByText('65 recipes')).toBeVisible()
+  await expect(page.getByText('153 recipes')).toBeVisible()
   await page.getByLabel('Cuisine').selectOption('Korean')
-  await expect(page.locator('ul li a')).toHaveCount(8)
+  await expect(page.locator('ul li a')).toHaveCount(15) // 8 original + 7 added
   await page.getByText('Beef bibimbap').click()
   await expect(page.getByRole('heading', { name: 'Beef bibimbap' })).toBeVisible()
   await expect(page.getByText('approximate')).toBeVisible()
@@ -92,7 +92,7 @@ test('Pantry: add, use, undo; ledger history is kept', async ({ page }) => {
 test('Plan: any day can be switched between training and rest, without re-approval', async ({ page }) => {
   await approveTargets(page)
   await page.goto('/#/plan')
-  const sub = page.locator('header p')
+  const sub = page.locator('header h1 + div')
   const count = async () => Number((await sub.textContent())!.match(/(\d) training/)![1])
   const groups = page.getByRole('group', { name: 'Day type' })
   await expect(groups).toHaveCount(7)
@@ -122,7 +122,14 @@ test('Today: switch today to rest and back', async ({ page }) => {
   await expect(page.getByText(/easy to digest/)).toHaveCount(0)
   await group.getByRole('button', { name: /^Training/ }).click()
   await expect(group.getByRole('button', { name: /^Training/ })).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.getByText('Carbs (daily minimum)')).toBeVisible()
+  // symbols show amount, target and status in words; the overview lists every nutrient with its difference
+  await expect(page.getByRole('img', { name: /^Protein \d+ of \d+ g, \d+%, (low|on track|reached|over)$/ })).toBeVisible()
+  await page.getByText(/^Nutrition overview/).click()
+  const overview = page.getByRole('table', { name: /nutrition for/ })
+  await expect(overview.getByText('Carbs (daily minimum)')).toBeVisible()
+  for (const n of ['Calories', 'Fibre', 'Saturated fat', 'Added sugar']) await expect(overview.getByRole('rowheader', { name: new RegExp(`^${n}`) })).toBeVisible()
+  await expect(overview.getByText(/natural · .* added/)).toBeVisible()
+  await expect(overview.getByText(/significantly below|slightly below|on target|above/).first()).toBeVisible()
 })
 
 async function addToPantry(page: Page, name: string, qty: string, cost: string) {
@@ -250,7 +257,7 @@ test('Shopping list: build from planned meals, tick, add an extra, kept on reloa
   await expect(page.getByText('Check the receipt')).toBeVisible({ timeout: 90_000 })
   await page.getByRole('button', { name: 'Save to pantry and expenses' }).click()
   await expect(page.getByText(/Ticked \d+ items? on your shopping list/)).toBeVisible()
-  await page.getByRole('link', { name: 'shopping list' }).click()
+  await page.getByRole('link', { name: 'shopping list', exact: true }).click()
   await expect(page.getByRole('checkbox', { name: /^Avocado/ })).toBeChecked()
 })
 
@@ -357,6 +364,81 @@ test('Planner: draft, lock, swap, accept, undo; ratings keep a recipe out; Chef 
   await expect(page.getByText(/Your targets changed \(now v2\)\. 21 upcoming meals/)).toBeVisible()
   await page.getByRole('button', { name: 'Re-portion upcoming meals' }).click()
   await expect(page.getByText(/Re-portioned \d+ meals? for your new targets/)).toBeVisible()
+})
+
+test('Plan: 4-day view, generate, copy/change/clear/suggest a meal with undo, bulk prep, generate shopping list, edit the list', async ({ page }) => {
+  test.setTimeout(90_000)
+  await page.clock.setFixedTime(new Date('2026-11-26T07:00:00')) // Thursday morning
+  await approveTargets(page)
+  await page.goto('/#/plan')
+  await page.getByRole('radio', { name: '4 days' }).click()
+  await expect(page.locator('h1')).toHaveText('Next 4 days')
+  await expect(page.getByRole('group', { name: 'Day type' })).toHaveCount(4)
+  await page.getByRole('button', { name: 'Plan 4 days' }).click()
+  await expect(page.getByText(/^12 meals suggested/)).toBeVisible()
+  await page.getByRole('button', { name: 'Accept plan' }).click()
+  await expect(page.getByText(/Plan saved: 12 meals/)).toBeVisible()
+  const thuLunch = page.getByTestId('meal-2026-11-26|lunch')
+  await expect(thuLunch.getByText(/\d+ to buy|in pantry/)).toBeVisible()
+  await expect(page.getByLabel('Planned totals for Thu, 26 Nov')).toContainText('Protein')
+  await expect(page.getByText('From your pantry')).toBeVisible()
+
+  // copy Thursday's lunch to the other three days, then undo
+  const name = (await thuLunch.getByRole('link').textContent())!
+  await page.getByRole('button', { name: 'Options for Lunch on Thu, 26 Nov' }).click()
+  await page.getByRole('button', { name: 'Copy to other days' }).click()
+  await page.getByRole('button', { name: 'Copy to 3 days' }).click()
+  await expect(page.getByRole('status')).toContainText('Copied to 3 days')
+  await expect(page.getByTestId('meal-2026-11-29|lunch').getByRole('link')).toHaveText(name)
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(page.getByText('Change undone.')).toBeVisible()
+  await expect(page.getByTestId('meal-2026-11-29|lunch').getByRole('link')).not.toHaveText(name)
+
+  // change via the recipe browser: filters, missing ingredients shown before choosing
+  await page.getByRole('button', { name: 'Options for Dinner on Fri, 27 Nov' }).click()
+  await page.getByRole('button', { name: 'Change recipe' }).click()
+  await expect(page.getByText(/Still needed that day/)).toBeVisible()
+  await page.getByRole('radio', { name: 'All in pantry' }).click()
+  await expect(page.getByText(/^0 recipes/)).toBeVisible() // empty pantry
+  await page.getByRole('radio', { name: 'Needs shopping' }).click()
+  await page.getByLabel('Search recipes').fill('galbi')
+  await expect(page.getByText(/Missing: /).first()).toBeVisible()
+  await page.getByRole('button', { name: /^Choose Galbi/ }).first().click()
+  await expect(page.getByRole('status')).toContainText('Dinner on Fri, 27 Nov set.')
+  await expect(page.getByTestId('meal-2026-11-27|dinner').getByRole('link')).toContainText(/Galbi/)
+
+  // leave a meal unplanned, then ask for a suggestion
+  await page.getByRole('button', { name: 'Options for Smoko on Sat, 28 Nov' }).click()
+  await page.getByRole('button', { name: 'Leave unplanned' }).click()
+  await expect(page.getByTestId('meal-2026-11-28|smoko')).toContainText('Not planned')
+  await page.getByRole('button', { name: 'Suggest Smoko on Sat, 28 Nov' }).click()
+  await expect(page.getByTestId('meal-2026-11-28|smoko').getByRole('link')).toBeVisible()
+
+  // bulk prep: combined ingredients, cook schedule, list for those meals
+  await page.getByRole('button', { name: 'Bulk prep' }).click()
+  await expect(page.getByRole('heading', { name: 'Ingredients, combined' })).toBeVisible()
+  await expect(page.getByText(/servings? for/).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Shopping list for these meals' }).click()
+  await expect(page).toHaveURL(/#\/shopping/)
+  await expect(page.getByRole('status')).toContainText(/Built from \d+ planned meals?/)
+
+  // weekly list from the plan, then edit it
+  await page.goto('/#/plan')
+  await page.getByRole('button', { name: 'Generate shopping list' }).click()
+  await expect(page.getByRole('status')).toContainText(/Built from 12 planned meals and 4 breakfasts/)
+  const first = page.getByRole('button', { name: /^Change amount of / }).first()
+  const item = (await first.getAttribute('aria-label'))!.replace('Change amount of ', '')
+  await first.click()
+  await page.getByLabel(/^Amount/).fill('999')
+  await page.getByRole('button', { name: 'Save amount' }).click()
+  await expect(page.getByText('amount changed by you')).toBeVisible()
+  await page.getByRole('button', { name: `Remove ${item}` }).click()
+  await expect(page.getByText(/1 plan item removed by you/)).toBeVisible()
+  await page.getByRole('button', { name: 'Put back' }).click()
+  await expect(page.getByRole('button', { name: `Remove ${item}` })).toBeVisible()
+  // nothing was taken from the pantry
+  await page.goto('/#/pantry')
+  await expect(page.getByText(/Used -/)).toHaveCount(0)
 })
 
 test('Eating: half a lunch from the pantry with leftover waste, undo, a snack, yesterday’s breakfast, Chef “I had a banana”', async ({ page }) => {
@@ -481,6 +563,87 @@ test('Backup: zip with a photo, restore brings deleted data back, undo restore, 
   await expect(page.getByText('Last backup 8 days ago.')).toBeVisible()
 })
 
+test('Appearance: theme and night mode persist across reloads; system mode follows the device; quick toggle', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' })
+  await page.goto('/#/settings')
+  const html = page.locator('html')
+  await expect(html).toHaveAttribute('data-mode', 'light') // default: follow the system
+  await page.getByRole('radio', { name: /^Midnight theme/ }).click()
+  await page.getByRole('radio', { name: 'Night', exact: true }).click()
+  await expect(html).toHaveAttribute('data-theme', 'midnight')
+  await expect(html).toHaveAttribute('data-mode', 'dark')
+  const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+  await expect.poll(bg).toBe('rgb(10, 14, 26)') // after the short colour fade
+  await page.reload()
+  await expect(html).toHaveAttribute('data-theme', 'midnight')
+  await expect(html).toHaveAttribute('data-mode', 'dark')
+  await expect.poll(bg).toBe('rgb(10, 14, 26)') // after the short colour fade
+  await expect(page.getByRole('radio', { name: /^Midnight theme/ })).toHaveAttribute('aria-checked', 'true')
+
+  // system mode tracks the device as it changes
+  await page.getByRole('radio', { name: 'System', exact: true }).click()
+  await expect(html).toHaveAttribute('data-mode', 'light')
+  await page.emulateMedia({ colorScheme: 'dark' })
+  await expect(html).toHaveAttribute('data-mode', 'dark')
+
+  // one-tap toggle from the navigation (More on phones, sidebar on wide screens)
+  await page.goto('/#/')
+  if ((page.viewportSize()?.width ?? 0) < 1024) await page.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('button', { name: 'Switch to light mode' }).click()
+  await expect(html).toHaveAttribute('data-mode', 'light')
+})
+
+test('Suggestions and pantry check: suggested lunch, use it, missing ingredients highlighted, add to list; nothing deducted', async ({ page }) => {
+  test.setTimeout(120_000)
+  await page.clock.setFixedTime(new Date('2026-11-26T12:30:00'))
+  await approveTargets(page)
+  await page.goto('/#/scan')
+  await page.getByLabel('Choose a receipt photo').setInputFiles('e2e/fixtures/test-receipt-woolworths.jpg')
+  await expect(page.getByText('Check the receipt')).toBeVisible({ timeout: 90_000 })
+  await page.getByRole('button', { name: 'Save to pantry and expenses' }).click()
+  await expect(page.getByText(/items added to your pantry/)).toBeVisible()
+  const stock = async () => page.evaluate(async () => {
+    const db: IDBDatabase = await new Promise((ok) => { const r = indexedDB.open('personal-chef'); r.onsuccess = () => ok(r.result) })
+    const rows: Array<{ id: string; remaining: number }> = await new Promise((ok) => { const q = db.transaction('inventory_lots').objectStore('inventory_lots').getAll(); q.onsuccess = () => ok(q.result) })
+    db.close()
+    return JSON.stringify(rows.map((r) => [r.id, r.remaining]).sort())
+  })
+  const before = await stock()
+
+  await page.goto('/#/')
+  const card = page.locator('section', { has: page.getByRole('heading', { name: 'Suggested for lunch' }) })
+  await expect(card.getByText(/Still needed today:/)).toBeVisible()
+  await expect(card.getByRole('button')).toHaveCount(3)
+  await expect(card.getByText(/All in pantry|\d+ to buy/).first()).toBeVisible()
+  const name = (await card.getByRole('button').first().locator('span.truncate').textContent())!
+  await card.getByRole('button').first().click()
+  const sheet = page.getByRole('dialog')
+  await expect(sheet.getByRole('columnheader', { name: 'Pantry' })).toBeVisible()
+  await sheet.getByRole('button', { name: 'Use for lunch' }).click()
+  await expect(page.locator('section', { has: page.getByText('Lunch', { exact: true }) }).getByText(name)).toBeVisible()
+
+  // the lunch card's pantry chip opens the ingredient check; add what's missing to the list
+  await page.getByRole('button', { name: `Pantry check for ${name}` }).click()
+  const missing = sheet.getByText('Missing', { exact: true })
+  if (await missing.count()) {
+    await expect(missing.first()).toBeVisible()
+    await sheet.getByRole('button', { name: /^Add \d+ missing to shopping list$/ }).click()
+    await expect(sheet.getByText(/^Added \d+ items? to your shopping list\.$/)).toBeVisible()
+  }
+  await page.keyboard.press('Escape')
+
+  // the recipe page shows the same check
+  await page.goto('/#/recipes/recipe:au-chicken-rice-bowl')
+  const row = (n: string) => page.getByRole('row', { name: new RegExp(`^(available|partly available|missing) ${n}`) })
+  await expect(row('Chicken breast')).toContainText('Available')
+  await expect(row('Broccoli')).toContainText('Missing')
+  await page.getByRole('link', { name: 'Show recipes I can make now' }).click()
+  await expect(page.getByRole('checkbox', { name: /Can make now/ })).toBeChecked()
+
+  // looking, suggesting and adding to a list took nothing from the pantry
+  expect(await stock()).toBe(before)
+})
+
 async function tellChef(page: Page, text: string) {
   await page.getByLabel('Message Chef').fill(text)
   await page.getByLabel('Message Chef').press('Enter')
@@ -526,6 +689,81 @@ test('Chef: rest day with confirm and undo, swap a meal, add to the shopping lis
   await tellChef(page, 'chicken')
   await expect(page.getByText(/didn’t understand/)).toBeVisible()
   await expect(page.getByRole('log').locator(':scope > li').last().getByRole('button')).toHaveCount(3)
+})
+
+test('Ask Chef from Today: chips and typed questions answered in Chef; plan a suggestion; substitutes; protein target', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-11-26T09:00:00')) // Thursday, before lunch
+  await approveTargets(page)
+  await page.goto('/#/')
+  const card = page.getByRole('region', { name: 'Ask Chef' })
+  await card.getByRole('button', { name: 'High-protein lunch ideas' }).click()
+  await expect(page).toHaveURL(/#\/chef/)
+  await expect(page.getByText(/^For today’s lunch \(most protein first\):$/)).toBeVisible()
+  const options = page.getByRole('log').locator(':scope > li').last().getByRole('button')
+  const pick = (await options.first().locator('span').first().textContent())!
+  await options.first().click()
+  await expect(page.getByText(`${pick} is on today’s lunch`, { exact: false })).toBeVisible()
+
+  await page.goto('/#/')
+  await page.getByLabel('Ask Chef a question').fill('I have chicken, rice and broccoli')
+  await page.getByRole('button', { name: 'Ask', exact: true }).click()
+  await expect(page.getByText(/with chicken, rice, broccoli/)).toBeVisible()
+  await tellChef(page, 'what can I use instead of broccoli?')
+  await expect(page.getByText(/Swaps that work weight for weight: .*Green bean/)).toBeVisible()
+  await tellChef(page, 'How do I reach my protein target today?')
+  await expect(page.getByText(/^\d+ g protein to go today/)).toBeVisible()
+  await tellChef(page, 'dinner under $5')
+  await expect(page.getByText(/Prices come from your scanned receipts/)).toBeVisible()
+})
+
+test('Full journey: receipt → pantry → 4-day plan → shopping list → eat → Today and Chef agree; nothing deducted until eaten', async ({ page }) => {
+  test.setTimeout(150_000)
+  await page.clock.setFixedTime(new Date('2026-11-26T09:00:00'))
+  await approveTargets(page)
+  await page.goto('/#/scan')
+  await page.getByLabel('Choose a receipt photo').setInputFiles('e2e/fixtures/test-receipt-woolworths.jpg')
+  await expect(page.getByText('Check the receipt')).toBeVisible({ timeout: 90_000 })
+  await page.getByRole('button', { name: 'Save to pantry and expenses' }).click()
+  await expect(page.getByText(/items added to your pantry/)).toBeVisible()
+  const chickenStock = async () => {
+    await page.goto('/#/chef')
+    await tellChef(page, 'how much chicken do I have?')
+    const reply = page.getByRole('log').locator(':scope > li').last()
+    await expect(reply).toContainText(/You have/)
+    return (await reply.textContent())!
+  }
+  const before = await chickenStock()
+
+  // plan four days, put the chicken bowl on Thursday lunch from the recipe browser
+  await page.goto('/#/plan')
+  await page.getByRole('radio', { name: '4 days' }).click()
+  await page.getByRole('button', { name: 'Plan 4 days' }).click()
+  await page.getByRole('button', { name: 'Accept plan' }).click()
+  await expect(page.getByText(/Plan saved: 12 meals/)).toBeVisible()
+  await page.getByRole('button', { name: 'Options for Lunch on Thu, 26 Nov' }).click()
+  await page.getByRole('button', { name: 'Change recipe' }).click()
+  await page.getByLabel('Search recipes').fill('lemon chicken')
+  await page.getByRole('button', { name: /^Choose Lemon chicken, rice and greens bowl/ }).click()
+  await expect(page.getByTestId('meal-2026-11-26|lunch').getByRole('link')).toHaveText('Lemon chicken, rice and greens bowl')
+  await expect(page.getByText('From your pantry').locator('xpath=following-sibling::dd[1]')).not.toHaveText('$0.00')
+
+  // shopping list from the plan, minus the pantry; building it takes nothing from the pantry
+  await page.getByRole('button', { name: 'Generate shopping list' }).click()
+  await expect(page.getByRole('status')).toContainText(/Built from 12 planned meals and 4 breakfasts/)
+  await expect(page.getByText(/^Already in your pantry: \d+ items?/)).toBeVisible()
+  expect(await chickenStock()).toBe(before)
+
+  // eat Thursday's lunch: the pantry goes down, Today and Chef show it
+  await page.goto('/#/')
+  await page.getByRole('button', { name: 'Mark Lunch eaten' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Log it' }).click()
+  await expect(page.getByRole('radio', { name: 'Eaten', checked: true })).toBeVisible()
+  const protein = page.getByRole('img', { name: /^Protein / })
+  await expect.poll(async () => Number((await protein.getAttribute('aria-label'))!.match(/Protein (\d+)/)![1])).toBeGreaterThan(30) // the lunch, 40 g protein
+  const eaten = Number((await protein.getAttribute('aria-label'))!.match(/Protein (\d+)/)![1])
+  expect(await chickenStock()).not.toBe(before)
+  await tellChef(page, 'How do I reach my protein target today?')
+  await expect(page.getByText(new RegExp(`g protein to go today \\(${eaten} of \\d+ g eaten\\)`))).toBeVisible()
 })
 
 test('Expenses: add by hand, set a budget, get warned on Today, delete', async ({ page }) => {
@@ -585,13 +823,17 @@ test('receipt scanning works with the network off (after install)', async ({ pag
 
 test('all 11 screens open from the navigation', async ({ page }) => {
   await page.goto('/#/')
+  const wide = (page.viewportSize()?.width ?? 0) >= 1024 // wide screens: sidebar with every screen; phones: bottom bar + More
   for (const n of ['Plan', 'Recipes', 'Pantry', 'Today']) {
     await page.getByRole('navigation').getByRole('link', { name: n }).click()
     await expect(page.locator('h1')).toBeVisible()
   }
   for (const s of SCREENS) {
-    await page.getByRole('button', { name: 'More' }).click()
-    await page.getByRole('dialog').getByRole('button', { name: s }).click()
+    if (wide) await page.getByRole('navigation').getByRole('link', { name: s }).click()
+    else {
+      await page.getByRole('button', { name: 'More' }).click()
+      await page.getByRole('dialog').getByRole('button', { name: s }).click()
+    }
     await expect(page.locator('h1')).toHaveText(s === 'Goals & Targets' ? 'Goals & Targets' : s)
   }
 })
@@ -615,7 +857,7 @@ test('works offline after install', async ({ page, context }) => {
   await page.reload()
   await expect(page.locator('h1')).toHaveText('Today')
   await page.goto('/#/recipes')
-  await expect(page.getByText('65 recipes')).toBeVisible()
+  await expect(page.getByText('153 recipes')).toBeVisible()
   await context.setOffline(false)
 })
 

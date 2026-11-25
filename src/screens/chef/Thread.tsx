@@ -38,7 +38,7 @@ export function Thread({ msgs, h }: { msgs: Msg[]; h: Handlers }) {
       {msgs.map((m) =>
         m.from === 'me' ? (
           <li key={m.id} className="flex justify-end">
-            <p className="max-w-[85%] rounded-2xl rounded-br-md bg-leaf-700 px-3.5 py-2 text-sm text-white">{m.text}</p>
+            <p className="max-w-[85%] rounded-2xl rounded-br-md bg-leaf-700 px-3.5 py-2 text-sm text-on-accent">{m.text}</p>
           </li>
         ) : (
           <li key={m.id} className="flex justify-start">

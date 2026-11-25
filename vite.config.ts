@@ -34,7 +34,7 @@ export default defineConfig({
       },
       workbox: {
         // Everything the app needs is precached at install, so it runs fully offline.
-        globPatterns: ['**/*.{js,css,html,svg,png,json,wasm,gz}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,json,wasm,gz,woff2}'],
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
         navigateFallback: 'index.html',
       },

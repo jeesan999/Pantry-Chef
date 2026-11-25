@@ -2,6 +2,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { motion } from 'motion/react'
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react'
 import { Link } from 'react-router-dom'
+import type { LucideIcon } from 'lucide-react'
 
 export function cx(...c: Array<string | false | null | undefined>) {
   return c.filter(Boolean).join(' ')
@@ -9,11 +10,11 @@ export function cx(...c: Array<string | false | null | undefined>) {
 
 export function Page({ title, subtitle, action, children }: { title: string; subtitle?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 pb-28 pt-5">
-      <header className="mb-4 flex items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-leaf-900">{title}</h1>
-          {subtitle && <p className="mt-0.5 text-sm text-stone-500">{subtitle}</p>}
+    <div className="mx-auto w-full max-w-2xl animate-page-in px-4 pb-28 pt-6 sm:px-6 lg:max-w-3xl lg:px-8 lg:pb-12 lg:pt-10">
+      <header className="mb-5 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-[1.65rem] font-semibold leading-tight tracking-tight text-leaf-900 lg:text-3xl">{title}</h1>
+          {subtitle && <div className="mt-1 text-sm text-stone-500">{subtitle}</div>}
         </div>
         {action}
       </header>
@@ -22,12 +23,17 @@ export function Page({ title, subtitle, action, children }: { title: string; sub
   )
 }
 
-export function Card({ children, className, title, action }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode }) {
+export function Card({ children, className, title, action, icon: Icon }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode; icon?: LucideIcon }) {
   return (
-    <section className={cx('rounded-2xl border border-stone-200 bg-white p-4 shadow-sm', className)}>
+    <section className={cx('rounded-2xl border border-stone-200 bg-white p-4 shadow-card sm:p-5', className)}>
       {(title || action) && (
         <div className="mb-3 flex items-center justify-between gap-2">
-          {title && <h2 className="text-base font-semibold text-stone-800">{title}</h2>}
+          {title && (
+            <h2 className="flex min-w-0 items-center gap-2 text-[0.95rem] font-semibold text-stone-800">
+              {Icon && <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-leaf-50 text-leaf-700"><Icon className="h-4 w-4" aria-hidden /></span>}
+              {title}
+            </h2>
+          )}
           {action}
         </div>
       )}
@@ -39,7 +45,7 @@ export function Card({ children, className, title, action }: { children: ReactNo
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
 export function Button({ variant = 'primary', className, ...p }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
   const styles: Record<Variant, string> = {
-    primary: 'bg-leaf-700 text-white hover:bg-leaf-600 active:bg-leaf-900',
+    primary: 'bg-leaf-700 text-on-accent hover:bg-leaf-600 active:bg-leaf-900',
     secondary: 'bg-leaf-50 text-leaf-700 border border-leaf-200 hover:bg-leaf-100',
     ghost: 'text-leaf-700 hover:bg-leaf-50',
     danger: 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100',
@@ -48,7 +54,7 @@ export function Button({ variant = 'primary', className, ...p }: ButtonHTMLAttri
     <button
       {...p}
       className={cx(
-        'inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-medium transition disabled:opacity-40',
+        'inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-4 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-leaf-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40',
         styles[variant],
         className,
       )}
@@ -99,7 +105,7 @@ export function Notice({ tone = 'ember', children }: { tone?: 'ember' | 'leaf' |
 }
 
 /** Circular gauge: value against target, with an animated arc. */
-export function Ring({ value, target, label, unit, color = '#2e7445', size = 76, max }: {
+export function Ring({ value, target, label, unit, color = 'var(--nut-protein)', size = 76, max }: {
   value: number; target: number; label: string; unit: string; color?: string; size?: number; max?: boolean
 }) {
   const r = size / 2 - 7
@@ -109,13 +115,13 @@ export function Ring({ value, target, label, unit, color = '#2e7445', size = 76,
   return (
     <div className="flex flex-col items-center gap-1">
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${label} ${Math.round(value)} of ${Math.round(target)} ${unit}`}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e7e5e4" strokeWidth={7} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" style={{ stroke: 'var(--color-stone-200)' }} strokeWidth={7} />
         <motion.circle
           cx={size / 2}
           cy={size / 2}
           r={r}
           fill="none"
-          stroke={over ? '#dc2626' : color}
+          style={{ stroke: over ? 'var(--color-red-600)' : color }}
           strokeWidth={7}
           strokeLinecap="round"
           strokeDasharray={c}
@@ -160,7 +166,7 @@ export function Sheet({ open, onOpenChange, title, children }: { open: boolean; 
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/30" />
         <Dialog.Content
           aria-describedby={undefined}
-          className="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] overflow-y-auto rounded-t-3xl bg-white p-5 pb-8 shadow-xl sm:inset-x-auto sm:left-1/2 sm:w-[32rem] sm:-translate-x-1/2"
+          className="fixed inset-x-0 bottom-0 z-50 max-h-[90dvh] animate-pop-in overflow-y-auto rounded-t-3xl border-t border-stone-200 bg-white p-5 pb-8 shadow-raised sm:inset-x-auto sm:bottom-6 sm:left-1/2 sm:w-[32rem] sm:-translate-x-1/2 sm:rounded-3xl sm:border"
         >
           <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-stone-200" />
           <Dialog.Title className="mb-4 text-lg font-semibold text-leaf-900">{title}</Dialog.Title>

@@ -1,14 +1,27 @@
 import { useLiveQuery } from 'dexie-react-hooks'
+import { Pencil } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Badge, Button, Field, Input, Notice, Select, Sheet, cx, fmt } from '../../components/ui'
 import { db, repo } from '../../db/instance'
-import type { QtyUnit, ShoppingListItem } from '../../db/types'
+import type { Product, QtyUnit, ShoppingListItem } from '../../db/types'
 import { formatQty } from '../../engines/shopping/engine'
 import { guessCategory, searchItems } from '../../lib/itemSearch'
-import { addExtra, removeItem, setTicked, type ExtraChoice } from '../../lib/shopping'
+import { addExtra, packsFor, removeItem, setItemQuantity, setTicked, type ExtraChoice } from '../../lib/shopping'
 
-export function ItemRow({ item }: { item: ShoppingListItem }) {
+export function ItemRow({ item, product }: { item: ShoppingListItem; product?: Product }) {
   const [err, setErr] = useState('')
+  const [editing, setEditing] = useState<string | null>(null)
+  const saveQty = async () => {
+    if (editing === null) return
+    setErr('')
+    try {
+      await setItemQuantity(repo, item.id, Number(editing))
+      setEditing(null)
+    } catch (e) {
+      setErr((e as Error).message)
+    }
+  }
+  const packs = packsFor(item.quantity, item.unit, product)
   // Shown at once; the saved value takes over when the database answers.
   const [pending, setPending] = useState<boolean | null>(null)
   if (pending !== null && pending === item.ticked) setPending(null) // saved value has caught up
@@ -38,13 +51,27 @@ export function ItemRow({ item }: { item: ShoppingListItem }) {
           <span className={cx('block truncate font-medium text-stone-800', ticked && 'line-through')}>
             {name} <span className="tabular font-normal text-stone-600">{formatQty(item.quantity, item.unit)}</span>
           </span>
+          {packs && <span className="tabular block text-xs text-stone-600">{packs.packs} × {formatQty(packs.size, item.unit)} pack{packs.packs === 1 ? '' : 's'}</span>}
           {detail && <span className="block truncate text-xs text-stone-500">{detail}</span>}
+          {item.quantityEdited && <span className="block text-xs text-stone-500">amount changed by you</span>}
           {err && <span className="block text-xs text-red-600">{err}</span>}
         </span>
       </label>
       <span className="tabular shrink-0 text-sm">{item.estCostCents !== undefined ? fmt.money(item.estCostCents) : <Badge>no price yet</Badge>}</span>
-      {item.source === 'extra' && (
-        <Button variant="ghost" className="shrink-0 px-2 text-stone-500" aria-label={`Remove ${name}`} onClick={() => removeItem(repo, item.id)}>✕</Button>
+      {!ticked && (
+        <Button variant="ghost" className="shrink-0 px-2 text-stone-500" aria-label={`Change amount of ${name}`} onClick={() => setEditing(String(+item.quantity.toFixed(2)))}><Pencil className="h-4 w-4" aria-hidden /></Button>
+      )}
+      <Button variant="ghost" className="shrink-0 px-2 text-stone-500" aria-label={`Remove ${name}`} onClick={() => removeItem(repo, item.id)}>✕</Button>
+      {editing !== null && (
+        <Sheet open onOpenChange={(o) => !o && setEditing(null)} title={`How much ${name.toLowerCase()}?`}>
+          <form onSubmit={(e) => { e.preventDefault(); saveQty() }} className="space-y-3">
+            <Field label={`Amount (${item.unit === 'unit' ? 'items' : item.unit})`} hint={item.neededQty ? `Your meals need ${formatQty(item.neededQty, item.unit)}${item.haveQty ? `, you have ${formatQty(item.haveQty, item.unit)}` : ''}.` : undefined}>
+              <Input autoFocus inputMode="decimal" value={editing} onChange={(e) => setEditing(e.target.value)} />
+            </Field>
+            {err && <Notice tone="red">{err}</Notice>}
+            <Button type="submit" className="w-full">Save amount</Button>
+          </form>
+        </Sheet>
       )}
     </li>
   )
