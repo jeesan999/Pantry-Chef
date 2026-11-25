@@ -23,6 +23,7 @@ import { StaleTargets } from './plan/StaleTargets'
 import { EatBar, SnacksCard } from './today/Eating'
 import { SuggestCard } from './today/Suggest'
 import { AskChef } from './today/AskChef'
+import { Logo } from '../components/Logo'
 import { MealPantryChip } from './today/MealPantryChip'
 import { BackupReminder } from './today/BackupReminder'
 import { MAX_DAYS_BACK, loadDay } from '../lib/eating'
@@ -104,6 +105,11 @@ export default function TodayScreen() {
         </div>
       }
     >
+      {date === now && (
+        <div className="flex justify-center">
+          <Logo size={128} eager className="sm:h-40! sm:w-40!" />
+        </div>
+      )}
       <StaleTargets />
       <BackupReminder />
       <BudgetAlerts statuses={budgets} link />
