@@ -254,6 +254,54 @@ test('Shopping list: build from planned meals, tick, add an extra, kept on reloa
   await expect(page.getByRole('checkbox', { name: /^Avocado/ })).toBeChecked()
 })
 
+test('Progress: trend from 4 weeks of weigh-ins, calibration proposed and approved, goal target, delete', async ({ page }) => {
+  // fat loss approved on 20 Oct
+  await page.clock.setFixedTime(new Date('2026-10-20T08:00:00'))
+  await approveTargets(page)
+  await page.getByLabel('Goal type').selectOption('fat_loss')
+  await page.getByRole('button', { name: 'Propose new targets for this goal' }).click()
+  await page.getByRole('button', { name: 'Approve' }).click()
+  await expect(page.getByText('v2', { exact: true })).toBeVisible()
+  const before = await page.getByText(/kcal\s*maintenance/).first().textContent()
+  // 29 mornings of flat weight up to 26 Nov, written straight to the app's database
+  await page.evaluate(async () => {
+    const db: IDBDatabase = await new Promise((ok, no) => { const r = indexedDB.open('personal-chef'); r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error) })
+    const tx = db.transaction('weight_measurements', 'readwrite')
+    for (let i = 0; i < 29; i++) {
+      const d = new Date(Date.UTC(2026, 9, 29 + i)).toISOString().slice(0, 10)
+      tx.objectStore('weight_measurements').put({ id: `w${i}`, profileId: 'profile:me', date: d, weightKg: i % 2 ? 81.3 : 80.9, timeOfDay: 'morning' })
+    }
+    await new Promise((ok) => { tx.oncomplete = ok })
+    db.close()
+  })
+  await page.clock.setFixedTime(new Date('2026-11-26T08:00:00'))
+  await page.goto('/#/progress')
+  await page.reload()
+  await expect(page.getByTestId('avg-weight')).toHaveText(/^81\.\d kg$/)
+  await expect(page.getByTestId('trend')).toHaveText('steady')
+  await expect(page.getByRole('img', { name: /Weight chart: \d+ weigh-ins/ })).toBeVisible()
+  // flat weight on a deficit: maintenance was overestimated
+  await expect(page.getByText(/your targets expected losing/)).toBeVisible()
+  await page.getByRole('button', { name: 'Propose new targets' }).click()
+  await page.getByRole('link', { name: 'Review and approve them on Goals' }).click()
+  await expect(page.getByText(/assumes you ate to plan/)).toBeVisible()
+  await page.getByRole('button', { name: 'Approve' }).click()
+  await expect(page.getByText('v3', { exact: true })).toBeVisible()
+  await expect(page.getByText(/calibrated from your weight trend/)).toBeVisible()
+  expect(await page.getByText(/kcal\s*maintenance/).first().textContent()).not.toBe(before)
+  // goal target
+  await page.goto('/#/progress')
+  await page.getByRole('button', { name: 'Set a target' }).click()
+  await page.getByLabel('Target weight (kg)').fill('78')
+  await page.getByRole('button', { name: 'Save targets' }).click()
+  await expect(page.getByText(/kg to go/)).toBeVisible()
+  await expect(page.getByText(/trend isn’t heading towards the target/)).toBeVisible()
+  // delete a weigh-in
+  await expect(page.getByRole('button', { name: 'Show all 29' })).toBeVisible()
+  await page.getByRole('button', { name: /^Delete 8\d\.\d kg on/ }).first().click()
+  await expect(page.getByRole('button', { name: 'Show all 28' })).toBeVisible()
+})
+
 async function tellChef(page: Page, text: string) {
   await page.getByLabel('Message Chef').fill(text)
   await page.getByLabel('Message Chef').press('Enter')

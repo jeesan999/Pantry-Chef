@@ -15,6 +15,8 @@ import { formatQty } from '../engines/shopping/engine'
 import { EXAMPLES, interpret, type Intent } from '../engines/chef/intents'
 import { SLOT_LABEL, SLOT_TAGS, assignMeal, clearMeal, targetsForDate } from './day'
 import { budgetStatuses } from './expenses'
+import { loadProgress } from './progress'
+import { fmtRate, hasRate } from '../engines/progress/engine'
 import { searchItems } from './itemSearch'
 import { addNutrients, emptyNutrients } from './nutrition'
 import { loadPantrySuggestions, loadRecipeNutrition, rankForSlot } from './rank'
@@ -72,6 +74,7 @@ export async function act(deps: ChefDeps, intent: Intent): Promise<Reply> {
     case 'nutritionLeft': return nutritionLeft(deps, intent.date)
     case 'spent': return spent(deps, intent.period)
     case 'budget': return budget(deps)
+    case 'progress': return progress(deps)
   }
 }
 
@@ -573,4 +576,19 @@ async function budget(deps: ChefDeps): Promise<Reply> {
     lines: s.map(({ period, status }) => `This ${period}: ${money(status.spentCents)} of ${money(status.limitCents)} · ${status.remainingCents >= 0 ? `${money(status.remainingCents)} left` : `${money(-status.remainingCents)} over`}`),
     link: { to: '/expenses', label: 'See Expenses' },
   })
+}
+
+async function progress(deps: ChefDeps): Promise<Reply> {
+  const d = await loadProgress(deps.repo, deps.today)
+  const link = { to: '/progress', label: 'See Progress' }
+  if (!d.weights.length) return answer('No weigh-ins yet. Tell me your weight, e.g. “I weigh 80.4 kg”.', { link })
+  const lines: string[] = []
+  if (d.latestAvg !== null) lines.push(`7-day average: ${d.latestAvg.toFixed(1)} kg${d.weekAgoAvg !== null ? ` (${d.latestAvg - d.weekAgoAvg <= 0 ? '−' : '+'}${Math.abs(d.latestAvg - d.weekAgoAvg).toFixed(1)} kg on a week before)` : ''}`)
+  else lines.push(`Latest weigh-in: ${d.latestKg!.toFixed(1)} kg`)
+  lines.push(hasRate(d.rate) ? `4-week trend: ${fmtRate(d.rate.kgPerWeek)}` : `Trend: ${d.rate.why}`)
+  if (d.progress) {
+    lines.push(d.progress.reached ? `Target ${d.progress.targetKg} kg reached` : `Target ${d.progress.targetKg} kg: ${d.progress.pct}% of the way, ${d.progress.toGoKg.toFixed(1)} kg to go${d.progress.eta ? `, about ${dayLabel(d.progress.eta, deps.today)}${d.progress.eta.slice(0, 4) !== deps.today.slice(0, 4) ? ` ${d.progress.eta.slice(0, 4)}` : ''}` : ''}`)
+  }
+  if (d.adjustment.kind === 'suggest') lines.push(`Targets check: ${d.adjustment.reason}`)
+  return answer('Your progress:', { lines, link })
 }

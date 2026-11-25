@@ -52,6 +52,7 @@ export default function GoalsScreen() {
 
       {proposed && (
         <Card title={<span className="flex items-center gap-2">Proposed targets <Badge tone="ember">awaiting approval</Badge></span>}>
+          {proposed.note && <div className="mb-3"><Notice tone="leaf">{proposed.note}</Notice></div>}
           <TargetsView rec={proposed} compareTo={approved ?? undefined} />
           {warnings.length > 0 && (
             <ul className="mt-3 space-y-1.5">
@@ -127,7 +128,7 @@ function TargetsView({ rec, compareTo }: { rec: NutritionTargetRecord; compareTo
       <div className="rounded-xl bg-stone-50 p-3 text-stone-700">
         <p className="tabular">
           BMR {Math.round(i.bmrKcal).toLocaleString()} kcal (Mifflin–St Jeor: {i.weightKg} kg, {i.heightCm} cm, age {i.ageYears})
-          {' '}× {i.activityFactor} {act ? `(${act.label.toLowerCase()})` : ''} = <b>{i.maintenanceKcal.toLocaleString()} kcal</b> maintenance
+          {' '}× {i.activityFactor} {act ? `(${act.label.toLowerCase()})` : '(calibrated from your weight trend)'} = <b>{i.maintenanceKcal.toLocaleString()} kcal</b> maintenance
           {i.goalAdjustPct !== 0 && <> {i.goalAdjustPct > 0 ? '+' : '−'} {Math.abs(i.goalAdjustPct)}% for {GOAL_RULES[rec.targetSet.goal].label.toLowerCase()}</>}
         </p>
       </div>

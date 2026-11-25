@@ -4,10 +4,10 @@ An installable, offline-first web app for meal planning, nutrition targets, pant
 All data stays on your device. No accounts, API keys or paid services. Once installed, the app makes
 no network requests (a Content Security Policy blocks them).
 
-## Status: Phase 6 (Chef)
+## Status: Phase 7 (Progress)
 
 - 11 screens with navigation; Today, Plan, Recipes, Pantry, Goals & Targets, Progress (weigh-ins) and Settings work now;
-  Scan Receipt, Expenses, Shopping List and Chef work too.
+  Scan Receipt, Expenses, Shopping List, Chef and Progress work too.
 - Expenses: spending by week, month and year, by store, category and food type; weekly and monthly budgets with
   alerts (also on Today); manual expenses; price history; estimated cost per meal and per day; protein per dollar.
   The calculations are pure functions in `src/engines/cost/engine.ts`; meal costs use the latest price paid and are
@@ -22,6 +22,11 @@ no network requests (a Content Security Policy blocks them).
   “how much budget is left?”. A rule-based interpreter (`src/engines/chef/`) runs on the phone: no AI service, no
   network. Nothing changes until you tap “Do it”, and every change can be undone. Marking meals as eaten is a later
   phase.
+- Progress: 7-day average weight (morning weigh-ins preferred), 4-week trend in kg/week, weight and waist charts,
+  monthly table, target weight with progress and an estimated finish date, and delete for wrong entries. A targets
+  check compares the trend with what your targets expect and, when they disagree by 100+ kcal a day, offers to
+  recalibrate maintenance (activity factor, at most 10% a step; your goal % is unchanged). It assumes you ate to plan
+  and only takes effect when you approve the proposal on Goals. Logic: `src/engines/progress/engine.ts`.
 - 30-table IndexedDB database (Dexie) with foreign keys, validation, transactions and an append-only pantry ledger
   enforced in `src/db/repo.ts` and `src/db/pantry.ts`.
 - Engine A (Nutrition) in `src/engines/nutrition/engine.ts`: pure functions, emits the `TargetSet` contract in

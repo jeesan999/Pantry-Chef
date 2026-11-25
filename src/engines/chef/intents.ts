@@ -25,6 +25,7 @@ export type Intent =
   | { type: 'nutritionLeft'; date: string }
   | { type: 'spent'; period: 'week' | 'month' }
   | { type: 'budget' }
+  | { type: 'progress' }
 
 export type Interpretation = { kind: 'intent'; intent: Intent } | { kind: 'unknown'; closest: string[] }
 
@@ -49,6 +50,7 @@ export const EXAMPLES = [
   'How much protein is left today?',
   'How much have I spent this week?',
   'How much budget is left?',
+  'How’s my progress?',
 ]
 
 const has = (s: string, re: RegExp) => re.test(s)
@@ -116,6 +118,11 @@ export function interpret(raw: string, today: string): Interpretation {
       const timeOfDay = has(t, /\b(evening|tonight|night|pm)\b/) ? 'evening' : has(t, /\b(midday|lunch|noon|afternoon|arvo)\b/) ? 'midday' : 'morning'
       return ok({ type: 'weigh', kg, timeOfDay })
     }
+  }
+
+  // progress
+  if (has(t, /\b(progress|my trend|weight trend|how am i (going|tracking|doing)|how much (have i|did i|weight have i) (lost|gained)|am i (losing|gaining)|on track)\b/) && !has(t, /\b(budget|spent|spend)\b/)) {
+    return ok({ type: 'progress' })
   }
 
   // shopping list: build / update

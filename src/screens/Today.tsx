@@ -14,6 +14,7 @@ import { addNutrients, emptyNutrients, scaleNutrients } from '../lib/nutrition'
 import { rankForSlot } from '../lib/rank'
 import { budgetStatuses } from '../lib/expenses'
 import { BudgetAlerts } from './expenses/BudgetAlerts'
+import { addDays as addDaysTo } from '../engines/nutrition/engine'
 
 export default function TodayScreen() {
   const date = today()
@@ -24,6 +25,7 @@ export default function TodayScreen() {
   const planned = useLiveQuery(() => db.planned_meals.where('date').equals(date).toArray(), [date])
   const [picking, setPicking] = useState<SlotName | null>(null)
   const budgets = useLiveQuery(() => budgetStatuses(repo, date), [date])
+  const lastWeighIn = useLiveQuery(async () => (await db.weight_measurements.orderBy('date').last())?.date ?? null)
 
   const choice = useDayChoices([date])?.[0]
   const day = approved && choice ? targetsForDate(approved.targetSet, choice) : null
@@ -59,6 +61,9 @@ export default function TodayScreen() {
       }
     >
       <BudgetAlerts statuses={budgets} link />
+      {lastWeighIn && lastWeighIn <= addDaysTo(date, -7) && (
+        <Notice tone="stone">No weigh-in for a week. <Link to="/progress" className="font-medium underline">Log one</Link> to keep your trend useful.</Notice>
+      )}
       {!profile.confirmed && (
         <Notice>
           Your profile uses starting values (81 kg, age 41, 180 cm). <Link to="/settings" className="font-medium underline">Check them in Settings</Link>.

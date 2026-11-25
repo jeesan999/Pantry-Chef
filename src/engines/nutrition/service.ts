@@ -73,8 +73,13 @@ export async function buildInputs(repo: Repo, date: string): Promise<NutritionIn
 }
 
 /** Calculate targets and store them as a proposal. Any earlier open proposal is withdrawn. */
-export async function proposeTargets(repo: Repo, date: string): Promise<{ record: NutritionTargetRecord; result: EngineResult }> {
+export async function proposeTargets(
+  repo: Repo,
+  date: string,
+  overrides: { activityFactor?: number; note?: string } = {},
+): Promise<{ record: NutritionTargetRecord; result: EngineResult }> {
   const inputs = await buildInputs(repo, date)
+  if (overrides.activityFactor !== undefined) inputs.activityFactor = overrides.activityFactor
   const result = computeTargets(inputs)
   const goal = await activeGoal(repo)
   const record: NutritionTargetRecord = {
@@ -94,6 +99,7 @@ export async function proposeTargets(repo: Repo, date: string): Promise<{ record
       goalAdjustPct: result.goalAdjustPct,
     },
     targetSet: result.targetSet,
+    note: overrides.note,
     createdAt: nowIso(),
   }
   await repo.tx(async () => {
@@ -113,6 +119,11 @@ export async function approveTargets(repo: Repo, id: string): Promise<NutritionT
     const version = Math.max(0, ...all.map((r) => r.version ?? 0)) + 1
     for (const r of all.filter((r) => r.status === 'approved')) {
       await repo.update('nutrition_targets', r.id, { status: 'superseded' })
+    }
+    // a calibrated activity factor becomes the setting, so later recalculations keep it
+    const settings = await repo.get('settings', SETTINGS_ID)
+    if (settings && settings.activityFactor !== rec.inputs.activityFactor) {
+      await repo.update('settings', SETTINGS_ID, { activityFactor: rec.inputs.activityFactor, updatedAt: nowIso() })
     }
     return repo.update('nutrition_targets', id, {
       status: 'approved',

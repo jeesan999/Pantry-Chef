@@ -139,6 +139,10 @@ describe('interpret', () => {
     ['How much have I spent this week?', { type: 'spent', period: 'week' }],
     ['spending this month', { type: 'spent', period: 'month' }],
     ['How much budget is left?', { type: 'budget' }],
+    ["How's my progress?", { type: 'progress' }],
+    ['what is my weight trend', { type: 'progress' }],
+    ['how much have i lost', { type: 'progress' }],
+    ['am i on track', { type: 'progress' }],
     // not understood
     ['chicken', { kind: 'unknown' }],
     ['hello there', { kind: 'unknown' }],

@@ -62,6 +62,8 @@ export const SCHEMAS: Partial<Record<TableName, z.ZodType>> = {
     type: z.enum(['maintenance', 'recomp', 'fat_loss', 'weight_loss', 'muscle_gain', 'weight_gain']),
     energyAdjustPct: z.number().min(-20).max(15),
     startDate: date,
+    targetWeightKg: z.number().min(30).max(300).optional(),
+    targetWaistCm: z.number().min(40).max(200).optional(),
   }).loose(),
   training_schedule: z.object({
     id,

@@ -96,6 +96,7 @@ export interface NutritionTargetRecord {
     goalAdjustPct: number
   }
   targetSet: TargetSet
+  note?: string // why it was proposed, e.g. a calibration from the weight trend
   createdAt: string
   approvedAt?: string
 }

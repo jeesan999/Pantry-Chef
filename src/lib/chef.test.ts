@@ -179,6 +179,13 @@ describe('Chef: pantry, shopping, weigh-ins, money', () => {
     expect(as(await ask(deps, 'budget left?'), 'answer').text).toMatch(/haven’t set a budget/)
   })
 
+  it('progress: none yet, then the latest and trend', async () => {
+    expect(as(await ask(deps, "how's my progress"), 'answer').text).toMatch(/No weigh-ins yet/)
+    await apply('I weigh 80.4 kg')
+    const r = as(await ask(deps, 'am I on track'), 'answer')
+    expect(r.lines).toEqual(expect.arrayContaining(['Latest weigh-in: 80.4 kg', expect.stringMatching(/^Trend: Need 8 weigh-ins/)]))
+  })
+
   it('not understood: three closest examples', async () => {
     const r = as(await ask(deps, 'chicken'), 'unknown')
     expect(r.examples).toHaveLength(3)
