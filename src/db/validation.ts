@@ -118,6 +118,18 @@ export const SCHEMAS: Partial<Record<TableName, z.ZodType>> = {
   planned_meals: z.object({ id, mealPlanId: id, date, time, recipeId: id, portionScale: z.number().positive().max(5) }).loose(),
   // Receipt expenses may be negative after a big whole-receipt discount; manual ones are checked by addManualExpense.
   expenses: z.object({ id, store: z.string().min(1), date, amountCents: z.number().int(), category: z.string().min(1) }).loose(),
+  shopping_lists: z.object({ id, name: z.string().min(1), from: date.optional(), to: date.optional() }).loose()
+    .refine((l) => !l.from || !l.to || l.from <= l.to, 'the list must end on or after its first day'),
+  shopping_list_items: z.object({
+    id,
+    listId: id,
+    productId: id,
+    quantity: z.number().positive(),
+    unit: qtyUnit,
+    estCostCents: z.number().int().min(0).optional(),
+    ticked: z.boolean(),
+    source: z.enum(['plan', 'extra']).optional(),
+  }).loose(),
   budgets: z.object({
     id,
     settingsId: id,

@@ -66,7 +66,12 @@ export default function PlanScreen() {
           </Card>
         )
       })}
-      <ComingInPhase phase={5} what="The automatic seven-day planner: it picks meals for every slot to fit your targets, uses food near expiry first, builds the shopping list and costs the week. For now, choose meals on the Today screen." />
+      <Card>
+        <Link to="/shopping" className="flex min-h-11 items-center justify-between font-medium text-leaf-700">
+          Shopping list for these meals <span aria-hidden>›</span>
+        </Link>
+      </Card>
+      <ComingInPhase phase={8} what="The automatic seven-day planner: it picks meals for every slot to fit your targets, uses food near expiry first, and costs the week. For now, choose meals on the Today screen." />
     </Page>
   )
 }
